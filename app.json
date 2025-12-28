@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Chinese Word Map",
-    "slug": "ChineseWordMapApp",
+    "slug": "chinesewordappmap",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
