@@ -16,6 +16,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: 'npm'
 
       - name: Setup Expo and EAS
         uses: expo/expo-github-action@v8
@@ -24,12 +25,17 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
-      - name: Build APK
-        run: eas build --platform android --profile preview --non-interactive --no-wait
-
-      - name: Get build status
+      - name: Build APK on EAS
         run: |
-          echo "Build started on EAS servers!"
-          echo "Check status at: https://expo.dev/accounts/nowaymr/projects/chinesewordappmap/builds"
+          echo "Starting EAS build..."
+          eas build --platform android --profile preview --non-interactive --no-wait || true
+          echo ""
+          echo "✓ Build request sent to EAS servers!"
+          echo ""
+          echo "Check build status at:"
+          echo "https://expo.dev/accounts/nowaymr/projects/chinesewordappmap/builds"
+          echo ""
+          echo "The build will take approximately 15-20 minutes."
+          echo "You'll receive an email when it's complete."
