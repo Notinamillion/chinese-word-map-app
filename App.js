@@ -8,6 +8,7 @@ import syncManager from './src/services/syncManager';
 import AuthScreen from './src/screens/AuthScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import CharacterDetailScreen from './src/screens/CharacterDetailScreen';
+import QuizScreen from './src/screens/QuizScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -44,11 +45,6 @@ export default function App() {
 
   const initializeApp = async () => {
     try {
-      // TEMPORARY: Clear all AsyncStorage to fix corrupted data
-      // Remove this after first successful login
-      await AsyncStorage.clear();
-      console.log('[APP] Cleared AsyncStorage');
-
       // Initialize sync manager
       await syncManager.initialize();
 
@@ -133,7 +129,7 @@ export default function App() {
 
           <Tab.Screen
             name="Quiz"
-            component={QuizPlaceholder}
+            component={QuizScreen}
             options={{
               tabBarLabel: 'Quiz',
               tabBarIcon: ({ color }) => <Text style={{ fontSize: 24 }}>📝</Text>,

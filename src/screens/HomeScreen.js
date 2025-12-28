@@ -39,6 +39,13 @@ export default function HomeScreen({ navigation }) {
       // Then fetch from server if online
       try {
         const result = await api.getProgress();
+        console.log('[HOME] Server progress response:', {
+          success: result.success,
+          hasProgress: !!result.progress,
+          progressKeys: result.progress ? Object.keys(result.progress) : [],
+          characterProgressCount: result.progress?.characterProgress ? Object.keys(result.progress.characterProgress).length : 0,
+          compoundProgressCount: result.progress?.compoundProgress ? Object.keys(result.progress.compoundProgress).length : 0,
+        });
         if (result.success) {
           setProgress(result.progress);
           await AsyncStorage.setItem('@progress', JSON.stringify(result.progress));
