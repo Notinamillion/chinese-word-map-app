@@ -89,11 +89,7 @@ export default function HomeScreen({ navigation }) {
     return (
       <TouchableOpacity
         style={[styles.charCard, isKnown && styles.charCardKnown]}
-        onPress={() => {
-          // TODO: Fix navigation to CharacterDetail - currently broken
-          // navigation.navigate('CharacterDetail', { character: item })
-          console.log('[HOME] Character clicked:', item.char);
-        }}
+        onPress={() => navigation.navigate('CharacterDetail', { character: item })}
         onLongPress={() => toggleCharacterKnown(item.char)}
       >
         <Text style={styles.charText}>{item.char}</Text>
