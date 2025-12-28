@@ -26,8 +26,7 @@
         "INTERNET",
         "ACCESS_NETWORK_STATE"
       ],
-      "versionCode": 2,
-      "usesCleartextTraffic": true
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/favicon.png"
