@@ -38,9 +38,11 @@ export default function QuizScreen() {
       try {
         const result = await api.getProgress();
         console.log('[QUIZ] Server response:', result);
-        if (result.success) {
-          progressData = result.progress;
+        // Server returns progress object directly, not wrapped in {success: true, progress: {...}}
+        if (result && typeof result === 'object') {
+          progressData = result;
           await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
+          console.log('[QUIZ] Loaded progress from server');
         }
       } catch (error) {
         console.log('[QUIZ] Server error:', error.message);
@@ -60,39 +62,37 @@ export default function QuizScreen() {
 
       console.log('[QUIZ] Progress data keys:', Object.keys(progressData));
 
-      const knownWords = [];
+      const quizItems = [];
 
-      // Collect all compound words from characters with any progress
-      Object.keys(characters).forEach(char => {
-        const charProgress = progressData.characterProgress?.[char];
-        // Include if character has any progress data (not just "known")
-        if (charProgress) {
-          const charData = characters[char];
-          if (charData.compounds) {
-            charData.compounds.forEach(compound => {
-              knownWords.push({
-                word: compound.word,
-                pinyin: compound.pinyin,
-                meanings: compound.meanings,
-                char: char,
-              });
+      // Add individual characters marked as known
+      if (progressData.characterProgress) {
+        Object.keys(progressData.characterProgress).forEach(char => {
+          const charData = progressData.characterProgress[char];
+          if (charData && charData.known && characters[char]) {
+            quizItems.push({
+              type: 'character',
+              word: char,
+              pinyin: characters[char].pinyin,
+              meanings: characters[char].meanings,
+              char: char,
             });
           }
-        }
-      });
+        });
+      }
 
-      // Also check compound progress directly
+      // Add compound words that were explicitly marked as known
       if (progressData.compoundProgress) {
         Object.keys(progressData.compoundProgress).forEach(word => {
           const compoundData = progressData.compoundProgress[word];
-          if (compoundData) {
+          if (compoundData && compoundData.known) {
             // Find this compound in characters data
             Object.keys(characters).forEach(char => {
               const charData = characters[char];
               if (charData.compounds) {
                 const found = charData.compounds.find(c => c.word === word);
-                if (found && !knownWords.find(w => w.word === word)) {
-                  knownWords.push({
+                if (found && !quizItems.find(w => w.word === word)) {
+                  quizItems.push({
+                    type: 'compound',
                     word: found.word,
                     pinyin: found.pinyin,
                     meanings: found.meanings,
@@ -113,21 +113,21 @@ export default function QuizScreen() {
         sampleCharProgress: progressData.characterProgress ? Object.entries(progressData.characterProgress).slice(0, 2) : [],
         sampleCompoundProgress: progressData.compoundProgress ? Object.entries(progressData.compoundProgress).slice(0, 2) : []
       });
-      console.log('[QUIZ] Found', knownWords.length, 'compound words from progress');
+      console.log('[QUIZ] Found', quizItems.length, 'items for quiz (characters + compounds)');
 
-      if (knownWords.length === 0) {
+      if (quizItems.length === 0) {
         Alert.alert(
-          'No Words Yet',
-          'No compound words found in your progress. Long-press characters on the Home screen to mark them as known, which will unlock their compound words for quizzing!'
+          'No Items Yet',
+          'No characters or words found in your progress. Long-press characters on the Home screen to mark them as known, or tap compound words in the character detail screen!'
         );
         return;
       }
 
-      // Shuffle and take up to 10 words
-      const shuffled = knownWords.sort(() => 0.5 - Math.random());
-      const quizItems = shuffled.slice(0, Math.min(10, shuffled.length));
+      // Shuffle and take up to 10 items
+      const shuffled = quizItems.sort(() => 0.5 - Math.random());
+      const selectedItems = shuffled.slice(0, Math.min(10, shuffled.length));
 
-      setQuiz(quizItems);
+      setQuiz(selectedItems);
       setQuizMode('words');
       setCurrentIndex(0);
       setRevealed(false);
@@ -149,28 +149,47 @@ export default function QuizScreen() {
     };
     setScore(newScore);
 
-    // Save quiz result for this word locally
+    // Save quiz result locally
     try {
-      const currentWord = quiz[currentIndex].word;
+      const currentItem = quiz[currentIndex];
+      const currentWord = currentItem.word;
+      const itemType = currentItem.type; // 'character' or 'compound'
+
       const cachedProgress = await AsyncStorage.getItem('@progress');
       const progressData = cachedProgress ? JSON.parse(cachedProgress) : { characterProgress: {}, compoundProgress: {} };
 
+      // Initialize progress objects if needed
       if (!progressData.compoundProgress) {
         progressData.compoundProgress = {};
       }
-
-      if (!progressData.compoundProgress[currentWord]) {
-        progressData.compoundProgress[currentWord] = { attempts: 0, correct: 0 };
+      if (!progressData.characterProgress) {
+        progressData.characterProgress = {};
       }
 
-      progressData.compoundProgress[currentWord].attempts += 1;
-      if (isCorrect) {
-        progressData.compoundProgress[currentWord].correct += 1;
+      // Track progress based on item type
+      if (itemType === 'character') {
+        if (!progressData.characterProgress[currentWord]) {
+          progressData.characterProgress[currentWord] = { known: true, attempts: 0, correct: 0 };
+        }
+        progressData.characterProgress[currentWord].attempts = (progressData.characterProgress[currentWord].attempts || 0) + 1;
+        if (isCorrect) {
+          progressData.characterProgress[currentWord].correct = (progressData.characterProgress[currentWord].correct || 0) + 1;
+        }
+        progressData.characterProgress[currentWord].lastQuizzed = Date.now();
+      } else {
+        // Compound word
+        if (!progressData.compoundProgress[currentWord]) {
+          progressData.compoundProgress[currentWord] = { known: true, attempts: 0, correct: 0 };
+        }
+        progressData.compoundProgress[currentWord].attempts += 1;
+        if (isCorrect) {
+          progressData.compoundProgress[currentWord].correct += 1;
+        }
+        progressData.compoundProgress[currentWord].lastQuizzed = Date.now();
       }
-      progressData.compoundProgress[currentWord].lastQuizzed = Date.now();
 
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
-      console.log('[QUIZ] Saved result for', currentWord, '- correct:', isCorrect);
+      console.log('[QUIZ] Saved result for', currentWord, `(${itemType})`, '- correct:', isCorrect);
     } catch (error) {
       console.error('[QUIZ] Error saving quiz result:', error);
     }

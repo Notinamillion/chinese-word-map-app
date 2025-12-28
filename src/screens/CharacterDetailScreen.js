@@ -13,6 +13,7 @@ import syncManager from '../services/syncManager';
 export default function CharacterDetailScreen({ route }) {
   const { character } = route.params;
   const [charProgress, setCharProgress] = useState(0);
+  const [compoundKnownList, setCompoundKnownList] = useState({});
 
   useEffect(() => {
     loadProgress();
@@ -28,9 +29,52 @@ export default function CharacterDetailScreen({ route }) {
                         progressData[character.char] ||
                         0;
         setCharProgress(progress);
+
+        // Load compound known status
+        if (progressData.compoundProgress) {
+          setCompoundKnownList(progressData.compoundProgress);
+        }
       }
     } catch (error) {
       console.error('[DETAIL] Error loading progress:', error);
+    }
+  };
+
+  const isCompoundKnown = (word) => {
+    return !!compoundKnownList[word];
+  };
+
+  const toggleCompoundKnown = async (word) => {
+    try {
+      const cachedProgress = await AsyncStorage.getItem('@progress');
+      const progressData = cachedProgress ? JSON.parse(cachedProgress) : { characterProgress: {}, compoundProgress: {} };
+
+      if (!progressData.compoundProgress) {
+        progressData.compoundProgress = {};
+      }
+
+      // Toggle the known status
+      if (progressData.compoundProgress[word]) {
+        delete progressData.compoundProgress[word];
+      } else {
+        progressData.compoundProgress[word] = {
+          known: true,
+          addedAt: Date.now(),
+        };
+      }
+
+      await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
+      setCompoundKnownList(progressData.compoundProgress);
+
+      // Queue sync
+      await syncManager.queueAction({
+        type: 'SAVE_PROGRESS',
+        data: progressData,
+      });
+
+      console.log('[DETAIL] Toggled compound word:', word, '- known:', !!progressData.compoundProgress[word]);
+    } catch (error) {
+      console.error('[DETAIL] Error toggling compound:', error);
     }
   };
 
@@ -134,19 +178,36 @@ export default function CharacterDetailScreen({ route }) {
       {character.compounds && character.compounds.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Compound Words</Text>
+          <Text style={styles.sectionHint}>Tap a word to add it to your quiz list</Text>
           {character.compounds.map((compound, index) => (
-            <View key={index} style={styles.compoundItem}>
-              <Text style={styles.compoundWord}>{compound.word}</Text>
-              <Text style={styles.compoundTraditional}>
-                {compound.traditional}
-              </Text>
-              <Text style={styles.compoundPinyin}>{compound.pinyin}</Text>
+            <TouchableOpacity
+              key={index}
+              style={styles.compoundItem}
+              onPress={() => toggleCompoundKnown(compound.word)}
+            >
+              <View style={styles.compoundHeader}>
+                <View style={styles.compoundInfo}>
+                  <Text style={styles.compoundWord}>{compound.word}</Text>
+                  <Text style={styles.compoundTraditional}>
+                    {compound.traditional}
+                  </Text>
+                  <Text style={styles.compoundPinyin}>{compound.pinyin}</Text>
+                </View>
+                <View style={[
+                  styles.compoundCheckbox,
+                  isCompoundKnown(compound.word) && styles.compoundCheckboxChecked
+                ]}>
+                  {isCompoundKnown(compound.word) && (
+                    <Text style={styles.checkmark}>✓</Text>
+                  )}
+                </View>
+              </View>
               {compound.meanings && compound.meanings.map((meaning, idx) => (
                 <Text key={idx} style={styles.compoundMeaning}>
                   • {meaning}
                 </Text>
               ))}
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       )}
@@ -185,7 +246,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 10,
+    marginBottom: 5,
+  },
+  sectionHint: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 15,
+    fontStyle: 'italic',
   },
   progressBar: {
     height: 20,
@@ -243,7 +310,39 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: '#667eea',
     paddingLeft: 15,
-    marginVertical: 10,
+    paddingRight: 15,
+    paddingVertical: 12,
+    marginVertical: 8,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+  },
+  compoundHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  compoundInfo: {
+    flex: 1,
+  },
+  compoundCheckbox: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#ccc',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+  compoundCheckboxChecked: {
+    backgroundColor: '#4caf50',
+    borderColor: '#4caf50',
+  },
+  checkmark: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   compoundWord: {
     fontSize: 24,

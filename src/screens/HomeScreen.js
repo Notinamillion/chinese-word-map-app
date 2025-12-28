@@ -40,15 +40,16 @@ export default function HomeScreen({ navigation }) {
       try {
         const result = await api.getProgress();
         console.log('[HOME] Server progress response:', {
-          success: result.success,
-          hasProgress: !!result.progress,
-          progressKeys: result.progress ? Object.keys(result.progress) : [],
-          characterProgressCount: result.progress?.characterProgress ? Object.keys(result.progress.characterProgress).length : 0,
-          compoundProgressCount: result.progress?.compoundProgress ? Object.keys(result.progress.compoundProgress).length : 0,
+          hasResult: !!result,
+          resultKeys: result ? Object.keys(result) : [],
+          characterProgressCount: result?.characterProgress ? Object.keys(result.characterProgress).length : 0,
+          compoundProgressCount: result?.compoundProgress ? Object.keys(result.compoundProgress).length : 0,
         });
-        if (result.success) {
-          setProgress(result.progress);
-          await AsyncStorage.setItem('@progress', JSON.stringify(result.progress));
+        // Server returns progress object directly
+        if (result && typeof result === 'object') {
+          setProgress(result);
+          await AsyncStorage.setItem('@progress', JSON.stringify(result));
+          console.log('[HOME] Updated progress from server');
         }
       } catch (error) {
         console.log('[HOME] Using cached progress (offline)');
