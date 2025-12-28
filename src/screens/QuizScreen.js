@@ -81,14 +81,14 @@ export default function QuizScreen() {
       }
 
       // Add compound words that were explicitly marked as known
+      // Website format: compoundProgress[char].known = [word1, word2]
       if (progressData.compoundProgress) {
-        Object.keys(progressData.compoundProgress).forEach(word => {
-          const compoundData = progressData.compoundProgress[word];
-          if (compoundData && compoundData.known) {
-            // Find this compound in characters data
-            Object.keys(characters).forEach(char => {
-              const charData = characters[char];
-              if (charData.compounds) {
+        Object.keys(progressData.compoundProgress).forEach(char => {
+          const charProgress = progressData.compoundProgress[char];
+          if (charProgress && charProgress.known && Array.isArray(charProgress.known)) {
+            const charData = characters[char];
+            if (charData && charData.compounds) {
+              charProgress.known.forEach(word => {
                 const found = charData.compounds.find(c => c.word === word);
                 if (found && !quizItems.find(w => w.word === word)) {
                   quizItems.push({
@@ -99,8 +99,8 @@ export default function QuizScreen() {
                     char: char,
                   });
                 }
-              }
-            });
+              });
+            }
           }
         });
       }
@@ -177,15 +177,30 @@ export default function QuizScreen() {
         }
         progressData.characterProgress[currentWord].lastQuizzed = Date.now();
       } else {
-        // Compound word
-        if (!progressData.compoundProgress[currentWord]) {
-          progressData.compoundProgress[currentWord] = { known: true, attempts: 0, correct: 0 };
+        // Compound word - use website format: compoundProgress[char].quizScores[word]
+        const char = currentItem.char;
+        if (!progressData.compoundProgress[char]) {
+          progressData.compoundProgress[char] = { known: [], total: 0, quizScores: {} };
         }
-        progressData.compoundProgress[currentWord].attempts += 1;
+        if (!progressData.compoundProgress[char].quizScores) {
+          progressData.compoundProgress[char].quizScores = {};
+        }
+        if (!progressData.compoundProgress[char].quizScores[currentWord]) {
+          progressData.compoundProgress[char].quizScores[currentWord] = { attempts: 0, correct: 0, score: 0 };
+        }
+
+        const quizData = progressData.compoundProgress[char].quizScores[currentWord];
+        quizData.attempts = (quizData.attempts || 0) + 1;
         if (isCorrect) {
-          progressData.compoundProgress[currentWord].correct += 1;
+          quizData.correct = (quizData.correct || 0) + 1;
         }
-        progressData.compoundProgress[currentWord].lastQuizzed = Date.now();
+        quizData.lastQuizzed = Date.now();
+
+        // Calculate score (0-5 based on accuracy, matching website logic)
+        if (quizData.attempts > 0) {
+          const accuracy = quizData.correct / quizData.attempts;
+          quizData.score = Math.round(accuracy * 5);
+        }
       }
 
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));

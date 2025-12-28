@@ -30,9 +30,15 @@ export default function CharacterDetailScreen({ route }) {
                         0;
         setCharProgress(progress);
 
-        // Load compound known status
-        if (progressData.compoundProgress) {
-          setCompoundKnownList(progressData.compoundProgress);
+        // Load compound known status (website format: compoundProgress[char].known = [word1, word2])
+        if (progressData.compoundProgress && progressData.compoundProgress[character.char]) {
+          // Convert array format to lookup object for faster checking
+          const knownWords = progressData.compoundProgress[character.char].known || [];
+          const knownLookup = {};
+          knownWords.forEach(word => {
+            knownLookup[word] = true;
+          });
+          setCompoundKnownList(knownLookup);
         }
       }
     } catch (error) {
@@ -53,14 +59,24 @@ export default function CharacterDetailScreen({ route }) {
         progressData.compoundProgress = {};
       }
 
-      // Toggle the known status
-      if (progressData.compoundProgress[word]) {
-        delete progressData.compoundProgress[word];
-      } else {
-        progressData.compoundProgress[word] = {
-          known: true,
-          addedAt: Date.now(),
+      const char = character.char;
+
+      // Initialize character's compound progress if it doesn't exist
+      if (!progressData.compoundProgress[char]) {
+        progressData.compoundProgress[char] = {
+          known: [],
+          total: character.compounds ? character.compounds.length : 0
         };
+      }
+
+      // Toggle the known status (using website's structure: array of known words per character)
+      const knownWords = progressData.compoundProgress[char].known || [];
+      if (knownWords.includes(word)) {
+        // Remove from known list
+        progressData.compoundProgress[char].known = knownWords.filter(w => w !== word);
+      } else {
+        // Add to known list
+        progressData.compoundProgress[char].known = [...knownWords, word];
       }
 
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
@@ -72,7 +88,7 @@ export default function CharacterDetailScreen({ route }) {
         data: progressData,
       });
 
-      console.log('[DETAIL] Toggled compound word:', word, '- known:', !!progressData.compoundProgress[word]);
+      console.log('[DETAIL] Toggled compound word:', word, '- known:', progressData.compoundProgress[char].known.includes(word));
     } catch (error) {
       console.error('[DETAIL] Error toggling compound:', error);
     }
