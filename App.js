@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, StatusBar } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import syncManager from './src/services/syncManager';
 import AuthScreen from './src/screens/AuthScreen';
 import HomeScreen from './src/screens/HomeScreen';
+import CharacterDetailScreen from './src/screens/CharacterDetailScreen';
 
 const Tab = createBottomTabNavigator();
+const HomeStack = createNativeStackNavigator();
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -71,6 +74,33 @@ export default function App() {
     return <AuthScreen onLogin={handleLogin} />;
   }
 
+  // Home Stack Navigator (for navigating to character details)
+  function HomeStackNavigator() {
+    return (
+      <HomeStack.Navigator>
+        <HomeStack.Screen
+          name="HomeList"
+          component={HomeScreen}
+          options={{
+            headerTitle: 'Chinese Word Map',
+            headerRight: () => (
+              <Text style={{ marginRight: 15, color: '#667eea' }}>
+                {currentUser}
+              </Text>
+            ),
+          }}
+        />
+        <HomeStack.Screen
+          name="CharacterDetail"
+          component={CharacterDetailScreen}
+          options={({ route }) => ({
+            headerTitle: route.params?.character?.char || 'Character',
+          })}
+        />
+      </HomeStack.Navigator>
+    );
+  }
+
   return (
     <>
       {/* Offline/Sync Status Banner */}
@@ -100,16 +130,11 @@ export default function App() {
         >
           <Tab.Screen
             name="Home"
-            component={HomeScreen}
+            component={HomeStackNavigator}
             options={{
               tabBarLabel: 'Characters',
               tabBarIcon: ({ color }) => <Text style={{ fontSize: 24 }}>🏠</Text>,
-              headerTitle: 'Chinese Word Map',
-              headerRight: () => (
-                <Text style={{ marginRight: 15, color: '#667eea' }}>
-                  {currentUser}
-                </Text>
-              ),
+              headerShown: false,
             }}
           />
 
