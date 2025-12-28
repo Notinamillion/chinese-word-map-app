@@ -80,7 +80,13 @@ export default function CharacterDetailScreen({ route }) {
       }
 
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
-      setCompoundKnownList(progressData.compoundProgress);
+
+      // Update UI state - convert array to lookup object for this character
+      const knownLookup = {};
+      progressData.compoundProgress[char].known.forEach(w => {
+        knownLookup[w] = true;
+      });
+      setCompoundKnownList(knownLookup);
 
       // Queue sync
       await syncManager.queueAction({
