@@ -2,6 +2,8 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // API Configuration
+// For local network: http://192.168.1.222:3000
+// For remote access: Set up port forwarding and use your public IP or domain
 const API_BASE_URL = 'http://192.168.1.222:3000';
 
 // Create axios instance

@@ -43,7 +43,10 @@ export default function AuthScreen({ onLogin }) {
       }
     } catch (error) {
       console.error('[AUTH] ERROR:', error);
-      Alert.alert('Error', 'Could not connect to server. Please check your network.');
+      const errorMsg = error.code === 'ECONNREFUSED' || error.message?.includes('Network')
+        ? 'Cannot reach server at 192.168.1.222:3000\n\nMake sure:\n• Phone is on same WiFi network\n• Server is running\n• You can access http://192.168.1.222:3000 in phone browser'
+        : `Connection error: ${error.message || 'Unknown error'}`;
+      Alert.alert('Connection Error', errorMsg);
     } finally {
       console.log('[AUTH] 7. Setting loading to false');
       setLoading(false);
@@ -66,7 +69,10 @@ export default function AuthScreen({ onLogin }) {
         Alert.alert('Registration Failed', result.message || 'Could not create account');
       }
     } catch (error) {
-      Alert.alert('Error', 'Could not connect to server. Please check your network.');
+      const errorMsg = error.code === 'ECONNREFUSED' || error.message?.includes('Network')
+        ? 'Cannot reach server at 192.168.1.222:3000\n\nMake sure:\n• Phone is on same WiFi network\n• Server is running'
+        : `Connection error: ${error.message || 'Unknown error'}`;
+      Alert.alert('Connection Error', errorMsg);
     } finally {
       setLoading(false);
     }
