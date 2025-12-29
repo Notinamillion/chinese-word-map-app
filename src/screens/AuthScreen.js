@@ -44,7 +44,7 @@ export default function AuthScreen({ onLogin }) {
     } catch (error) {
       console.error('[AUTH] ERROR:', error);
       const errorMsg = error.code === 'ECONNREFUSED' || error.message?.includes('Network')
-        ? 'Cannot reach server at 192.168.1.222:3000\n\nMake sure:\n• Phone is on same WiFi network\n• Server is running\n• You can access http://192.168.1.222:3000 in phone browser'
+        ? 'Cannot reach server at https://chinese-app.synology.me\n\nMake sure:\n• You have internet connection\n• Server is running\n• You can access https://chinese-app.synology.me in browser'
         : `Connection error: ${error.message || 'Unknown error'}`;
       Alert.alert('Connection Error', errorMsg);
     } finally {
@@ -70,7 +70,7 @@ export default function AuthScreen({ onLogin }) {
       }
     } catch (error) {
       const errorMsg = error.code === 'ECONNREFUSED' || error.message?.includes('Network')
-        ? 'Cannot reach server at 192.168.1.222:3000\n\nMake sure:\n• Phone is on same WiFi network\n• Server is running'
+        ? 'Cannot reach server at https://chinese-app.synology.me\n\nMake sure:\n• You have internet connection\n• Server is running'
         : `Connection error: ${error.message || 'Unknown error'}`;
       Alert.alert('Connection Error', errorMsg);
     } finally {

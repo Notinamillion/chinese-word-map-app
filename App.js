@@ -45,6 +45,14 @@ export default function App() {
 
   const initializeApp = async () => {
     try {
+      // Check for saved user session
+      const savedUser = await AsyncStorage.getItem('currentUser');
+      if (savedUser) {
+        console.log('[APP] Found saved user:', savedUser);
+        setCurrentUser(savedUser);
+        setIsAuthenticated(true);
+      }
+
       // Initialize sync manager
       await syncManager.initialize();
 
