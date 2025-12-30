@@ -10,6 +10,37 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
 
+// Update streak function (ported from website)
+function updateStreak(progressData) {
+  const today = new Date().toISOString().split('T')[0];
+  const hasActivityToday = progressData.statistics.dailyStats[today] != null;
+
+  if (!hasActivityToday) {
+    return;
+  }
+
+  // Calculate current streak by counting backwards from today
+  let streak = 0;
+  let checkDate = new Date();
+
+  while (true) {
+    const dateStr = checkDate.toISOString().split('T')[0];
+    if (progressData.statistics.dailyStats[dateStr]) {
+      streak++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  progressData.statistics.milestones.currentStreak = streak;
+
+  // Update longest streak
+  if (streak > (progressData.statistics.milestones.longestStreak || 0)) {
+    progressData.statistics.milestones.longestStreak = streak;
+  }
+}
+
 export default function QuizScreen() {
   const [quizMode, setQuizMode] = useState(null); // null | 'words' | 'sentences'
   const [quiz, setQuiz] = useState(null);
@@ -55,9 +86,25 @@ export default function QuizScreen() {
 
       // Initialize empty progress if none exists
       if (!progressData) {
-        progressData = { characterProgress: {}, compoundProgress: {} };
+        progressData = { characterProgress: {}, compoundProgress: {}, statistics: null };
         await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
         console.log('[QUIZ] Initialized empty progress');
+      }
+
+      // Initialize statistics structure if missing
+      if (!progressData.statistics) {
+        progressData.statistics = {
+          quizSessions: [],
+          dailyStats: {},
+          milestones: {
+            totalSessions: 0,
+            totalReviews: 0,
+            currentStreak: 0,
+            longestStreak: 0,
+            firstQuizDate: null,
+          },
+          currentSession: null,
+        };
       }
 
       console.log('[QUIZ] Progress data keys:', Object.keys(progressData));
@@ -126,6 +173,18 @@ export default function QuizScreen() {
       // Shuffle and take up to 10 items
       const shuffled = quizItems.sort(() => 0.5 - Math.random());
       const selectedItems = shuffled.slice(0, Math.min(10, shuffled.length));
+
+      // Initialize quiz session tracking (matching website structure)
+      progressData.statistics.currentSession = {
+        startTime: Date.now(),
+        endTime: null,
+        mode: 'words',
+        totalItems: selectedItems.length,
+        correctCount: 0,
+        accuracy: 0,
+        duration: 0,
+      };
+      await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
 
       setQuiz(selectedItems);
       setQuizMode('words');
@@ -219,25 +278,78 @@ export default function QuizScreen() {
       const finalTotal = newScore.total;
       const percentage = Math.round((finalScore / finalTotal) * 100);
 
-      // Save quiz session
+      // Save quiz session (matching website structure)
       try {
-        const session = {
-          date: Date.now(),
-          score: finalScore,
-          total: finalTotal,
-          percentage: percentage,
+        const cachedProgress = await AsyncStorage.getItem('@progress');
+        const progressData = cachedProgress ? JSON.parse(cachedProgress) : {
+          characterProgress: {},
+          compoundProgress: {},
+          statistics: {
+            quizSessions: [],
+            dailyStats: {},
+            milestones: {
+              totalSessions: 0,
+              totalReviews: 0,
+              currentStreak: 0,
+              longestStreak: 0,
+              firstQuizDate: null,
+            },
+            currentSession: null,
+          }
         };
 
-        const cachedProgress = await AsyncStorage.getItem('@progress');
-        const progressData = cachedProgress ? JSON.parse(cachedProgress) : { characterProgress: {}, compoundProgress: {} };
+        // Complete the current session
+        if (progressData.statistics.currentSession) {
+          const session = progressData.statistics.currentSession;
+          session.endTime = Date.now();
+          session.duration = session.endTime - session.startTime;
+          session.correctCount = finalScore;
+          session.accuracy = finalScore / finalTotal;
 
-        if (!progressData.quizSessions) {
-          progressData.quizSessions = [];
+          // Add to session history
+          progressData.statistics.quizSessions.push(session);
+
+          // Update daily stats
+          const dateStr = new Date().toISOString().split('T')[0];
+          if (!progressData.statistics.dailyStats[dateStr]) {
+            progressData.statistics.dailyStats[dateStr] = {
+              sessionsCount: 0,
+              itemsReviewed: 0,
+              newWordsLearned: 0,
+              accuracy: 0,
+              timeSpent: 0,
+            };
+          }
+
+          const dayStats = progressData.statistics.dailyStats[dateStr];
+          dayStats.sessionsCount++;
+          dayStats.itemsReviewed += finalTotal;
+          dayStats.timeSpent += session.duration;
+
+          // Update accuracy (weighted average)
+          const totalReviews = dayStats.itemsReviewed;
+          dayStats.accuracy =
+            ((dayStats.accuracy * (totalReviews - finalTotal)) +
+              (session.accuracy * finalTotal)) /
+            totalReviews;
+
+          // Update milestones
+          progressData.statistics.milestones.totalSessions++;
+          progressData.statistics.milestones.totalReviews += finalTotal;
+
+          if (!progressData.statistics.milestones.firstQuizDate) {
+            progressData.statistics.milestones.firstQuizDate = Date.now();
+          }
+
+          // Update streak
+          updateStreak(progressData);
+
+          // Clear current session
+          progressData.statistics.currentSession = null;
         }
-        progressData.quizSessions.push(session);
 
         await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
-        console.log('[QUIZ] Saved quiz session:', session);
+        console.log('[QUIZ] Saved quiz session with statistics');
       } catch (error) {
         console.error('[QUIZ] Error saving quiz session:', error);
       }

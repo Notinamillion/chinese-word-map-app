@@ -9,6 +9,7 @@ import AuthScreen from './src/screens/AuthScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import CharacterDetailScreen from './src/screens/CharacterDetailScreen';
 import QuizScreen from './src/screens/QuizScreen';
+import StatisticsScreen from './src/screens/StatisticsScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -141,6 +142,15 @@ export default function App() {
             options={{
               tabBarLabel: 'Quiz',
               tabBarIcon: ({ color }) => <Text style={{ fontSize: 24 }}>📝</Text>,
+            }}
+          />
+
+          <Tab.Screen
+            name="Statistics"
+            component={StatisticsScreen}
+            options={{
+              tabBarLabel: 'Statistics',
+              tabBarIcon: ({ color }) => <Text style={{ fontSize: 24 }}>📊</Text>,
             }}
           />
 

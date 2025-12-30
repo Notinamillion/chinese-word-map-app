@@ -22,8 +22,8 @@
 - ✅ All sync fixes implemented (cookies, compound words)
 
 ### Current App Version:
-- **Version**: 1.0.0
-- **Version Code**: 3
+- **Version**: 1.1.0 (Statistics Dashboard added)
+- **Version Code**: 4
 - **API URL**: https://chinese-app.synology.me
 - **Package**: com.sbateman.chinesewordmap
 - **Expo SDK**: 54
@@ -87,6 +87,55 @@ if (savedUser) {
     - CharacterDetail screen (compounds, mark known)
   - Quiz Tab → QuizScreen
   - Profile Tab → ProfileScreen
+
+---
+
+## Recent Features Added
+
+### 🆕 Statistics Dashboard (Dec 30, 2025) - v1.1.0
+**Status**: ✅ IMPLEMENTED
+
+**What Was Added**:
+- Complete statistics screen with 3 tabs (Overview, Activity, Words)
+- Summary cards: Total Learned, Mastered, Accuracy %, Day Streak
+- Progress distribution bars (Struggling/Learning/Good/Mastered)
+- Review schedule (Due Today/This Week/Later)
+- Recent activity timeline (last 7 days with accuracy and time)
+- Words by category (expandable lists)
+- Milestones tracking (longest streak, total quizzes, total reviews)
+- Pull-to-refresh functionality
+- Quiz session tracking with timestamps and duration
+
+**Files Created**:
+- `src/screens/StatisticsScreen.js` (850 lines, ported from website)
+
+**Files Modified**:
+- `App.js` - Added Statistics tab to navigation
+- `src/screens/QuizScreen.js` - Added session metadata tracking, daily stats, streak calculation
+
+**Logic Ported from Website**:
+- `calculateStatistics()` - Analyzes progress data and categorizes words
+- `getRecentActivity()` - Gets last 7 days of quiz activity
+- `updateStreak()` - Calculates current/longest streak
+- Session tracking structure matches website 100%
+
+**Data Structure** (now matching website):
+```javascript
+statistics: {
+  quizSessions: [{
+    startTime, endTime, mode, totalItems, correctCount, accuracy, duration
+  }],
+  dailyStats: {
+    '2025-12-30': {
+      sessionsCount, itemsReviewed, accuracy, timeSpent
+    }
+  },
+  milestones: {
+    totalSessions, totalReviews, currentStreak, longestStreak, firstQuizDate
+  },
+  currentSession: {...}
+}
+```
 
 ---
 
@@ -311,11 +360,13 @@ npm install --legacy-peer-deps
    - Test offline mode
    - Verify sync works (mark words on app → check website)
 
-3. **Future Features** (not yet implemented):
-   - Statistics screen (placeholder exists)
-   - Sentence quiz (placeholder exists)
-   - Custom words management
-   - Image upload for characters
+3. **Future Features** (see FEATURE_GAP_ANALYSIS.md for complete details):
+   - 🔥 **Statistics Dashboard** (HIGHEST PRIORITY - website logic exists)
+   - 🔥 **SM-2 Spaced Repetition Algorithm** (smart quiz scheduling)
+   - 🟡 Image upload for characters
+   - 🟡 Custom words management
+   - 🟢 Edit definitions
+   - 🟢 Sentence quiz + management
 
 ### Common Next Questions:
 - "How do I add a new feature?"
@@ -331,6 +382,8 @@ npm install --legacy-peer-deps
 - **GitHub Repo**: https://github.com/Notinamillion/chinese-word-map-app
 - **Expo Project**: https://expo.dev/accounts/nowaymr/projects/chinesewordappmap
 - **Website**: https://chinese-app.synology.me
+- **Website Codebase**: C:\Users\s.bateman\chinese-word-map (7,013 line SPA)
+- **Feature Gap Analysis**: See FEATURE_GAP_ANALYSIS.md in this repo
 - **Expo Docs**: https://docs.expo.dev
 - **React Navigation**: https://reactnavigation.org
 
@@ -373,5 +426,5 @@ npm install --legacy-peer-deps
 ---
 
 **Created**: 2025-12-30
-**Last Updated**: After session persistence fix
-**Status**: Ready for APK build
+**Last Updated**: After Statistics Dashboard implementation (v1.1.0)
+**Status**: Ready to test statistics, then build APK
