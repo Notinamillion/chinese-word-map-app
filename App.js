@@ -39,10 +39,58 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState({ online: true, queueSize: 0 });
+  const [dueCardsCount, setDueCardsCount] = useState(0);
 
   useEffect(() => {
     initializeApp();
+
+    // Update due cards count periodically
+    const interval = setInterval(updateDueCardsCount, 60000); // Every minute
+    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      updateDueCardsCount();
+    }
+  }, [isAuthenticated]);
+
+  const updateDueCardsCount = async () => {
+    try {
+      const cachedProgress = await AsyncStorage.getItem('@progress');
+      if (!cachedProgress) return;
+
+      const progressData = JSON.parse(cachedProgress);
+      const now = Date.now();
+      let dueCount = 0;
+
+      // Count due compound words
+      if (progressData.compoundProgress) {
+        Object.values(progressData.compoundProgress).forEach(charProgress => {
+          if (charProgress.quizScores) {
+            Object.values(charProgress.quizScores).forEach(quizData => {
+              if (quizData.nextReview && quizData.nextReview <= now) {
+                dueCount++;
+              }
+            });
+          }
+        });
+      }
+
+      // Count due characters
+      if (progressData.characterProgress) {
+        Object.values(progressData.characterProgress).forEach(charData => {
+          if (charData.quizScore?.nextReview && charData.quizScore.nextReview <= now) {
+            dueCount++;
+          }
+        });
+      }
+
+      setDueCardsCount(dueCount);
+    } catch (error) {
+      console.error('[APP] Error updating due cards count:', error);
+    }
+  };
 
   const initializeApp = async () => {
     try {
@@ -141,7 +189,16 @@ export default function App() {
             component={QuizScreen}
             options={{
               tabBarLabel: 'Quiz',
-              tabBarIcon: ({ color }) => <Text style={{ fontSize: 24 }}>📝</Text>,
+              tabBarIcon: ({ color }) => (
+                <View>
+                  <Text style={{ fontSize: 24 }}>📝</Text>
+                  {dueCardsCount > 0 && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{dueCardsCount}</Text>
+                    </View>
+                  )}
+                </View>
+              ),
             }}
           />
 
@@ -246,5 +303,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     marginTop: 10,
+  },
+  badge: {
+    position: 'absolute',
+    right: -6,
+    top: -3,
+    backgroundColor: '#f44336',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });

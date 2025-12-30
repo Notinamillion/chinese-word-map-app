@@ -14,6 +14,7 @@ import {
   getQuizDirection,
   prioritizeQuizItems,
   getQualityLabel,
+  formatNextReview,
 } from '../services/sm2Algorithm';
 
 // Update streak function (ported from website)
@@ -55,6 +56,7 @@ export default function QuizScreen() {
   const [score, setScore] = useState({ correct: 0, total: 0 });
   const [characters, setCharacters] = useState({});
   const [quizStartTime, setQuizStartTime] = useState(null); // Track time for quality suggestion
+  const [feedbackMessage, setFeedbackMessage] = useState(null); // Show feedback after rating
 
   useEffect(() => {
     loadCharacters();
@@ -282,106 +284,130 @@ export default function QuizScreen() {
 
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
       console.log('[QUIZ] Saved result for', currentWord, `(${itemType})`, '- correct:', isCorrect);
+
+      // Show feedback with next review info
+      const updatedData = itemType === 'character'
+        ? progressData.characterProgress[currentWord].quizScore
+        : progressData.compoundProgress[currentItem.char].quizScores[currentWord];
+
+      const nextReviewStr = formatNextReview(updatedData.nextReview);
+      const qualityStr = getQualityLabel(quality);
+      const intervalDays = Math.round(updatedData.interval);
+
+      setFeedbackMessage({
+        quality: qualityStr,
+        nextReview: nextReviewStr,
+        interval: intervalDays,
+        score: updatedData.score,
+      });
+
+      // Auto-advance after showing feedback
+      setTimeout(() => {
+        setFeedbackMessage(null);
+        if (currentIndex < quiz.length - 1) {
+          setCurrentIndex(currentIndex + 1);
+          setRevealed(false);
+        } else {
+          // Quiz complete (handled below)
+          finishQuiz(newScore);
+        }
+      }, 2000); // Show feedback for 2 seconds
     } catch (error) {
       console.error('[QUIZ] Error saving quiz result:', error);
     }
+  };
 
-    // Move to next question or finish
-    if (currentIndex < quiz.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-      setRevealed(false);
-    } else {
-      // Quiz complete
-      const finalScore = newScore.correct;
-      const finalTotal = newScore.total;
-      const percentage = Math.round((finalScore / finalTotal) * 100);
+  const finishQuiz = async (finalScoreObj) => {
+    const finalScore = finalScoreObj.correct;
+    const finalTotal = finalScoreObj.total;
+    const percentage = Math.round((finalScore / finalTotal) * 100);
 
-      // Save quiz session (matching website structure)
-      try {
-        const cachedProgress = await AsyncStorage.getItem('@progress');
-        const progressData = cachedProgress ? JSON.parse(cachedProgress) : {
-          characterProgress: {},
-          compoundProgress: {},
-          statistics: {
-            quizSessions: [],
-            dailyStats: {},
-            milestones: {
-              totalSessions: 0,
-              totalReviews: 0,
-              currentStreak: 0,
-              longestStreak: 0,
-              firstQuizDate: null,
-            },
-            currentSession: null,
-          }
-        };
+    // Save quiz session (matching website structure)
+    try {
+      const cachedProgress = await AsyncStorage.getItem('@progress');
+      const progressData = cachedProgress ? JSON.parse(cachedProgress) : {
+        characterProgress: {},
+        compoundProgress: {},
+        statistics: {
+          quizSessions: [],
+          dailyStats: {},
+          milestones: {
+            totalSessions: 0,
+            totalReviews: 0,
+            currentStreak: 0,
+            longestStreak: 0,
+            firstQuizDate: null,
+          },
+          currentSession: null,
+        }
+      };
 
-        // Complete the current session
-        if (progressData.statistics.currentSession) {
-          const session = progressData.statistics.currentSession;
-          session.endTime = Date.now();
-          session.duration = session.endTime - session.startTime;
-          session.correctCount = finalScore;
-          session.accuracy = finalScore / finalTotal;
+      // Complete the current session
+      if (progressData.statistics.currentSession) {
+        const session = progressData.statistics.currentSession;
+        session.endTime = Date.now();
+        session.duration = session.endTime - session.startTime;
+        session.correctCount = finalScore;
+        session.accuracy = finalScore / finalTotal;
 
-          // Add to session history
-          progressData.statistics.quizSessions.push(session);
+        // Add to session history
+        progressData.statistics.quizSessions.push(session);
 
-          // Update daily stats
-          const dateStr = new Date().toISOString().split('T')[0];
-          if (!progressData.statistics.dailyStats[dateStr]) {
-            progressData.statistics.dailyStats[dateStr] = {
-              sessionsCount: 0,
-              itemsReviewed: 0,
-              newWordsLearned: 0,
-              accuracy: 0,
-              timeSpent: 0,
-            };
-          }
-
-          const dayStats = progressData.statistics.dailyStats[dateStr];
-          dayStats.sessionsCount++;
-          dayStats.itemsReviewed += finalTotal;
-          dayStats.timeSpent += session.duration;
-
-          // Update accuracy (weighted average)
-          const totalReviews = dayStats.itemsReviewed;
-          dayStats.accuracy =
-            ((dayStats.accuracy * (totalReviews - finalTotal)) +
-              (session.accuracy * finalTotal)) /
-            totalReviews;
-
-          // Update milestones
-          progressData.statistics.milestones.totalSessions++;
-          progressData.statistics.milestones.totalReviews += finalTotal;
-
-          if (!progressData.statistics.milestones.firstQuizDate) {
-            progressData.statistics.milestones.firstQuizDate = Date.now();
-          }
-
-          // Update streak
-          updateStreak(progressData);
-
-          // Clear current session
-          progressData.statistics.currentSession = null;
+        // Update daily stats
+        const dateStr = new Date().toISOString().split('T')[0];
+        if (!progressData.statistics.dailyStats[dateStr]) {
+          progressData.statistics.dailyStats[dateStr] = {
+            sessionsCount: 0,
+            itemsReviewed: 0,
+            newWordsLearned: 0,
+            accuracy: 0,
+            timeSpent: 0,
+          };
         }
 
-        await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
-        console.log('[QUIZ] Saved quiz session with statistics');
-      } catch (error) {
-        console.error('[QUIZ] Error saving quiz session:', error);
+        const dayStats = progressData.statistics.dailyStats[dateStr];
+        dayStats.sessionsCount++;
+        dayStats.itemsReviewed += finalTotal;
+        dayStats.timeSpent += session.duration;
+
+        // Update accuracy (weighted average)
+        const totalReviews = dayStats.itemsReviewed;
+        dayStats.accuracy =
+          ((dayStats.accuracy * (totalReviews - finalTotal)) +
+            (session.accuracy * finalTotal)) /
+          totalReviews;
+
+        // Update milestones
+        progressData.statistics.milestones.totalSessions++;
+        progressData.statistics.milestones.totalReviews += finalTotal;
+
+        if (!progressData.statistics.milestones.firstQuizDate) {
+          progressData.statistics.milestones.firstQuizDate = Date.now();
+        }
+
+        // Update streak
+        updateStreak(progressData);
+
+        // Clear current session
+        progressData.statistics.currentSession = null;
       }
 
-      Alert.alert(
-        'Quiz Complete! 🎉',
-        `You got ${finalScore} out of ${finalTotal} correct (${percentage}%)`,
-        [
-          { text: 'Try Again', onPress: () => startWordQuiz() },
-          { text: 'Done', onPress: () => setQuizMode(null) },
-        ]
-      );
+      await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
+      console.log('[QUIZ] Saved quiz session with statistics');
+    } catch (error) {
+      console.error('[QUIZ] Error saving quiz session:', error);
     }
+
+    Alert.alert(
+      'Quiz Complete! 🎉',
+      `You got ${finalScore} out of ${finalTotal} correct (${percentage}%)`,
+      [
+        { text: 'Try Again', onPress: () => startWordQuiz() },
+        { text: 'Done', onPress: () => setQuizMode(null) },
+      ]
+    );
   };
+
 
   const quitQuiz = () => {
     Alert.alert(
@@ -444,6 +470,10 @@ export default function QuizScreen() {
 
   const currentItem = quiz[currentIndex];
 
+  // Determine quiz direction based on consecutive correct (progressive difficulty)
+  const direction = getQuizDirection(currentItem.quizData);
+  const isReversed = direction === 'english-to-chinese';
+
   return (
     <View style={styles.container}>
       {/* Quiz Header */}
@@ -461,27 +491,69 @@ export default function QuizScreen() {
         <Text style={styles.scoreText}>
           Score: {score.correct}/{score.total}
         </Text>
+        {isReversed && (
+          <Text style={styles.difficultyBadge}>🔥 Advanced Mode</Text>
+        )}
       </View>
 
       {/* Quiz Card */}
       <View style={styles.quizCard}>
-        <Text style={styles.quizWord}>{currentItem.word}</Text>
-        <Text style={styles.quizPinyin}>{currentItem.pinyin}</Text>
+        {!isReversed ? (
+          <>
+            {/* Normal: Show Chinese, recall English */}
+            <Text style={styles.quizWord}>{currentItem.word}</Text>
+            <Text style={styles.quizPinyin}>{currentItem.pinyin}</Text>
 
-        {revealed && (
-          <View style={styles.meaningContainer}>
-            <Text style={styles.meaningLabel}>Meaning:</Text>
-            {currentItem.meanings.map((meaning, idx) => (
-              <Text key={idx} style={styles.quizMeaning}>
-                • {meaning}
-              </Text>
-            ))}
-          </View>
+            {revealed && (
+              <View style={styles.meaningContainer}>
+                <Text style={styles.meaningLabel}>Meaning:</Text>
+                {currentItem.meanings.map((meaning, idx) => (
+                  <Text key={idx} style={styles.quizMeaning}>
+                    • {meaning}
+                  </Text>
+                ))}
+              </View>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Reversed: Show English, recall Chinese */}
+            <View style={styles.meaningContainer}>
+              <Text style={styles.meaningLabel}>Recall the Chinese word for:</Text>
+              {currentItem.meanings.map((meaning, idx) => (
+                <Text key={idx} style={styles.quizMeaning}>
+                  • {meaning}
+                </Text>
+              ))}
+            </View>
+
+            {revealed && (
+              <>
+                <Text style={[styles.quizWord, { marginTop: 20 }]}>{currentItem.word}</Text>
+                <Text style={styles.quizPinyin}>{currentItem.pinyin}</Text>
+              </>
+            )}
+          </>
         )}
       </View>
 
       {/* Quiz Actions */}
-      {!revealed ? (
+      {feedbackMessage ? (
+        <View style={styles.feedbackContainer}>
+          <Text style={styles.feedbackTitle}>{feedbackMessage.quality}</Text>
+          <View style={styles.feedbackDetails}>
+            <Text style={styles.feedbackText}>
+              Next review: <Text style={styles.feedbackValue}>{feedbackMessage.nextReview}</Text>
+            </Text>
+            <Text style={styles.feedbackText}>
+              Interval: <Text style={styles.feedbackValue}>{feedbackMessage.interval} {feedbackMessage.interval === 1 ? 'day' : 'days'}</Text>
+            </Text>
+            <Text style={styles.feedbackText}>
+              Score: <Text style={styles.feedbackValue}>{feedbackMessage.score}/5</Text>
+            </Text>
+          </View>
+        </View>
+      ) : !revealed ? (
         <TouchableOpacity
           style={[styles.quizButton, styles.revealButton]}
           onPress={revealAnswer}
@@ -647,6 +719,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#667eea',
   },
+  difficultyBadge: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ff5722',
+    marginTop: 4,
+  },
   quizCard: {
     backgroundColor: '#fff',
     margin: 20,
@@ -771,5 +849,34 @@ const styles = StyleSheet.create({
   quality5: {
     backgroundColor: '#e8f5e9',
     borderColor: '#4caf50',
+  },
+  feedbackContainer: {
+    backgroundColor: '#fff',
+    margin: 20,
+    marginTop: 0,
+    padding: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#667eea',
+  },
+  feedbackTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#667eea',
+    marginBottom: 16,
+  },
+  feedbackDetails: {
+    width: '100%',
+    gap: 8,
+  },
+  feedbackText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+  },
+  feedbackValue: {
+    fontWeight: 'bold',
+    color: '#333',
   },
 });
