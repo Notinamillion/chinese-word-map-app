@@ -8,6 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Speech from 'expo-speech';
 import api from '../services/api';
 import {
   calculateNextReview,
@@ -49,7 +50,7 @@ function updateStreak(progressData) {
 }
 
 export default function QuizScreen() {
-  const [quizMode, setQuizMode] = useState(null); // null | 'words' | 'sentences'
+  const [quizMode, setQuizMode] = useState(null); // null | 'words' | 'sentences' | 'audio'
   const [quiz, setQuiz] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -60,7 +61,20 @@ export default function QuizScreen() {
 
   useEffect(() => {
     loadCharacters();
+    // Cleanup: stop any speech when component unmounts
+    return () => {
+      Speech.stop();
+    };
   }, []);
+
+  // Text-to-Speech function for Chinese
+  const speakChinese = (text) => {
+    Speech.speak(text, {
+      language: 'zh-CN', // Mandarin Chinese
+      pitch: 1.0,
+      rate: 0.75, // Slightly slower for learning
+    });
+  };
 
   const loadCharacters = async () => {
     try {
@@ -520,7 +534,15 @@ export default function QuizScreen() {
         {!isReversed ? (
           <>
             {/* Normal: Show Chinese, recall English */}
-            <Text style={styles.quizWord}>{currentItem.word}</Text>
+            <View style={styles.wordWithSpeaker}>
+              <Text style={styles.quizWord}>{currentItem.word}</Text>
+              <TouchableOpacity
+                style={styles.speakerButton}
+                onPress={() => speakChinese(currentItem.word)}
+              >
+                <Text style={styles.speakerIcon}>🔊</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.quizPinyin}>{currentItem.pinyin}</Text>
 
             {revealed && (
@@ -548,7 +570,15 @@ export default function QuizScreen() {
 
             {revealed && (
               <>
-                <Text style={[styles.quizWord, { marginTop: 20 }]}>{currentItem.word}</Text>
+                <View style={styles.wordWithSpeaker}>
+                  <Text style={[styles.quizWord, { marginTop: 20 }]}>{currentItem.word}</Text>
+                  <TouchableOpacity
+                    style={styles.speakerButton}
+                    onPress={() => speakChinese(currentItem.word)}
+                  >
+                    <Text style={styles.speakerIcon}>🔊</Text>
+                  </TouchableOpacity>
+                </View>
                 <Text style={styles.quizPinyin}>{currentItem.pinyin}</Text>
               </>
             )}
@@ -761,11 +791,24 @@ const styles = StyleSheet.create({
     minHeight: 150,
     justifyContent: 'center',
   },
+  wordWithSpeaker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
   quizWord: {
     fontSize: 48,
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 12,
+  },
+  speakerButton: {
+    padding: 8,
+    marginBottom: 12,
+  },
+  speakerIcon: {
+    fontSize: 32,
   },
   quizPinyin: {
     fontSize: 20,
