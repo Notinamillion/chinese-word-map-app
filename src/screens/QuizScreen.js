@@ -9,6 +9,12 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
+import {
+  calculateNextReview,
+  getQuizDirection,
+  prioritizeQuizItems,
+  getQualityLabel,
+} from '../services/sm2Algorithm';
 
 // Update streak function (ported from website)
 function updateStreak(progressData) {
@@ -48,6 +54,7 @@ export default function QuizScreen() {
   const [revealed, setRevealed] = useState(false);
   const [score, setScore] = useState({ correct: 0, total: 0 });
   const [characters, setCharacters] = useState({});
+  const [quizStartTime, setQuizStartTime] = useState(null); // Track time for quality suggestion
 
   useEffect(() => {
     loadCharacters();
@@ -122,6 +129,7 @@ export default function QuizScreen() {
               pinyin: characters[char].pinyin,
               meanings: characters[char].meanings,
               char: char,
+              quizData: charData.quizScore || null, // Include quiz data for SM-2
             });
           }
         });
@@ -144,6 +152,7 @@ export default function QuizScreen() {
                     pinyin: found.pinyin,
                     meanings: found.meanings,
                     char: char,
+                    quizData: charProgress.quizScores?.[word] || null, // Include quiz data for SM-2
                   });
                 }
               });
@@ -170,9 +179,16 @@ export default function QuizScreen() {
         return;
       }
 
-      // Shuffle and take up to 10 items
-      const shuffled = quizItems.sort(() => 0.5 - Math.random());
-      const selectedItems = shuffled.slice(0, Math.min(10, shuffled.length));
+      // Use SM-2 prioritization: due items first, then struggling, then new, then mastered
+      const prioritized = prioritizeQuizItems(quizItems);
+      const selectedItems = prioritized.slice(0, Math.min(10, prioritized.length));
+
+      console.log('[QUIZ] Prioritized quiz items:', selectedItems.map(item => ({
+        word: item.word,
+        priority: item.priority,
+        score: item.quizData?.score,
+        nextReview: item.quizData?.nextReview ? new Date(item.quizData.nextReview).toLocaleDateString() : 'never'
+      })));
 
       // Initialize quiz session tracking (matching website structure)
       progressData.statistics.currentSession = {
@@ -199,9 +215,12 @@ export default function QuizScreen() {
 
   const revealAnswer = () => {
     setRevealed(true);
+    setQuizStartTime(Date.now()); // Start timing from reveal (for quality suggestion)
   };
 
-  const markAnswer = async (isCorrect) => {
+  const markQuality = async (quality) => {
+    // Quality >= 3 is considered "correct"
+    const isCorrect = quality >= 3;
     const newScore = {
       correct: score.correct + (isCorrect ? 1 : 0),
       total: score.total + 1,
@@ -225,16 +244,21 @@ export default function QuizScreen() {
         progressData.characterProgress = {};
       }
 
-      // Track progress based on item type
+      // Track progress based on item type using SM-2 algorithm
       if (itemType === 'character') {
         if (!progressData.characterProgress[currentWord]) {
-          progressData.characterProgress[currentWord] = { known: true, attempts: 0, correct: 0 };
+          progressData.characterProgress[currentWord] = { known: true };
         }
-        progressData.characterProgress[currentWord].attempts = (progressData.characterProgress[currentWord].attempts || 0) + 1;
-        if (isCorrect) {
-          progressData.characterProgress[currentWord].correct = (progressData.characterProgress[currentWord].correct || 0) + 1;
+        if (!progressData.characterProgress[currentWord].quizScore) {
+          progressData.characterProgress[currentWord].quizScore = null;
         }
-        progressData.characterProgress[currentWord].lastQuizzed = Date.now();
+
+        // Use SM-2 algorithm to calculate next review
+        const updatedQuizData = calculateNextReview(
+          progressData.characterProgress[currentWord].quizScore,
+          quality
+        );
+        progressData.characterProgress[currentWord].quizScore = updatedQuizData;
       } else {
         // Compound word - use website format: compoundProgress[char].quizScores[word]
         const char = currentItem.char;
@@ -245,21 +269,15 @@ export default function QuizScreen() {
           progressData.compoundProgress[char].quizScores = {};
         }
         if (!progressData.compoundProgress[char].quizScores[currentWord]) {
-          progressData.compoundProgress[char].quizScores[currentWord] = { attempts: 0, correct: 0, score: 0 };
+          progressData.compoundProgress[char].quizScores[currentWord] = null;
         }
 
-        const quizData = progressData.compoundProgress[char].quizScores[currentWord];
-        quizData.attempts = (quizData.attempts || 0) + 1;
-        if (isCorrect) {
-          quizData.correct = (quizData.correct || 0) + 1;
-        }
-        quizData.lastQuizzed = Date.now();
-
-        // Calculate score (0-5 based on accuracy, matching website logic)
-        if (quizData.attempts > 0) {
-          const accuracy = quizData.correct / quizData.attempts;
-          quizData.score = Math.round(accuracy * 5);
-        }
+        // Use SM-2 algorithm to calculate next review
+        const updatedQuizData = calculateNextReview(
+          progressData.compoundProgress[char].quizScores[currentWord],
+          quality
+        );
+        progressData.compoundProgress[char].quizScores[currentWord] = updatedQuizData;
       }
 
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
@@ -463,32 +481,69 @@ export default function QuizScreen() {
       </View>
 
       {/* Quiz Actions */}
-      <View style={styles.quizActions}>
-        {!revealed ? (
-          <TouchableOpacity
-            style={[styles.quizButton, styles.revealButton]}
-            onPress={revealAnswer}
-          >
-            <Text style={styles.quizButtonText}>👁️ Reveal Answer</Text>
-          </TouchableOpacity>
-        ) : (
-          <>
+      {!revealed ? (
+        <TouchableOpacity
+          style={[styles.quizButton, styles.revealButton]}
+          onPress={revealAnswer}
+        >
+          <Text style={styles.quizButtonText}>👁️ Reveal Answer</Text>
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.qualityRatingContainer}>
+          <Text style={styles.qualityLabel}>How well did you know it?</Text>
+          <View style={styles.qualityButtons}>
+            {/* Failed - Quality 0-2 */}
             <TouchableOpacity
-              style={[styles.quizButton, styles.wrongButton]}
-              onPress={() => markAnswer(false)}
+              style={[styles.qualityButton, styles.quality0]}
+              onPress={() => markQuality(0)}
             >
-              <Text style={styles.quizButtonText}>❌ Wrong</Text>
+              <Text style={styles.qualityButtonText}>😵</Text>
+              <Text style={styles.qualityButtonLabel}>Forgot</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.quizButton, styles.correctButton]}
-              onPress={() => markAnswer(true)}
+              style={[styles.qualityButton, styles.quality1]}
+              onPress={() => markQuality(1)}
             >
-              <Text style={styles.quizButtonText}>✓ Correct</Text>
+              <Text style={styles.qualityButtonText}>😓</Text>
+              <Text style={styles.qualityButtonLabel}>Very Hard</Text>
             </TouchableOpacity>
-          </>
-        )}
-      </View>
+
+            <TouchableOpacity
+              style={[styles.qualityButton, styles.quality2]}
+              onPress={() => markQuality(2)}
+            >
+              <Text style={styles.qualityButtonText}>😕</Text>
+              <Text style={styles.qualityButtonLabel}>Hard</Text>
+            </TouchableOpacity>
+
+            {/* Passed - Quality 3-5 */}
+            <TouchableOpacity
+              style={[styles.qualityButton, styles.quality3]}
+              onPress={() => markQuality(3)}
+            >
+              <Text style={styles.qualityButtonText}>😐</Text>
+              <Text style={styles.qualityButtonLabel}>Okay</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.qualityButton, styles.quality4]}
+              onPress={() => markQuality(4)}
+            >
+              <Text style={styles.qualityButtonText}>🙂</Text>
+              <Text style={styles.qualityButtonLabel}>Good</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.qualityButton, styles.quality5]}
+              onPress={() => markQuality(5)}
+            >
+              <Text style={styles.qualityButtonText}>😄</Text>
+              <Text style={styles.qualityButtonLabel}>Perfect!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -654,5 +709,67 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  qualityRatingContainer: {
+    padding: 20,
+    backgroundColor: '#fff',
+    margin: 20,
+    marginTop: 0,
+    borderRadius: 12,
+  },
+  qualityLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  qualityButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  qualityButton: {
+    width: '30%',
+    minWidth: 100,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#e0e0e0',
+  },
+  qualityButtonText: {
+    fontSize: 32,
+    marginBottom: 4,
+  },
+  qualityButtonLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+  },
+  quality0: {
+    backgroundColor: '#ffebee',
+    borderColor: '#f44336',
+  },
+  quality1: {
+    backgroundColor: '#fff3e0',
+    borderColor: '#ff9800',
+  },
+  quality2: {
+    backgroundColor: '#fff9e0',
+    borderColor: '#ffc107',
+  },
+  quality3: {
+    backgroundColor: '#e3f2fd',
+    borderColor: '#2196F3',
+  },
+  quality4: {
+    backgroundColor: '#e8f5e9',
+    borderColor: '#4caf50',
+  },
+  quality5: {
+    backgroundColor: '#e8f5e9',
+    borderColor: '#4caf50',
   },
 });
