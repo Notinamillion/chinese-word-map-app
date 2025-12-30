@@ -181,8 +181,26 @@ export default function QuizScreen() {
         return;
       }
 
+      // Filter out items reviewed very recently (within last 5 minutes) to avoid repetition
+      const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+      const eligibleItems = quizItems.filter(item => {
+        if (!item.quizData || !item.quizData.lastReviewed) {
+          return true; // Include new items
+        }
+        return item.quizData.lastReviewed < fiveMinutesAgo; // Exclude recently reviewed
+      });
+
+      console.log('[QUIZ] Filtered items:', {
+        total: quizItems.length,
+        eligible: eligibleItems.length,
+        recentlyReviewed: quizItems.length - eligibleItems.length
+      });
+
+      // If less than 10 eligible items, use all items (user wants to practice)
+      const itemsToQuiz = eligibleItems.length >= 10 ? eligibleItems : quizItems;
+
       // Use SM-2 prioritization: due items first, then struggling, then new, then mastered
-      const prioritized = prioritizeQuizItems(quizItems);
+      const prioritized = prioritizeQuizItems(itemsToQuiz);
       const selectedItems = prioritized.slice(0, Math.min(10, prioritized.length));
 
       console.log('[QUIZ] Prioritized quiz items:', selectedItems.map(item => ({
