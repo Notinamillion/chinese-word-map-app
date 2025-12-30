@@ -58,14 +58,53 @@ export default function QuizScreen() {
   const [characters, setCharacters] = useState({});
   const [quizStartTime, setQuizStartTime] = useState(null); // Track time for quality suggestion
   const [feedbackMessage, setFeedbackMessage] = useState(null); // Show feedback after rating
+  const [dueCount, setDueCount] = useState(0); // Count of due review cards
 
   useEffect(() => {
     loadCharacters();
+    updateDueCount();
     // Cleanup: stop any speech when component unmounts
     return () => {
       Speech.stop();
     };
   }, []);
+
+  const updateDueCount = async () => {
+    try {
+      const cachedProgress = await AsyncStorage.getItem('@progress');
+      if (!cachedProgress) return;
+
+      const progressData = JSON.parse(cachedProgress);
+      const now = Date.now();
+      let count = 0;
+
+      // Count due compound words
+      if (progressData.compoundProgress) {
+        Object.values(progressData.compoundProgress).forEach(charProgress => {
+          if (charProgress.quizScores) {
+            Object.values(charProgress.quizScores).forEach(quizData => {
+              if (quizData.nextReview && quizData.nextReview <= now) {
+                count++;
+              }
+            });
+          }
+        });
+      }
+
+      // Count due characters
+      if (progressData.characterProgress) {
+        Object.values(progressData.characterProgress).forEach(charData => {
+          if (charData.quizScore?.nextReview && charData.quizScore.nextReview <= now) {
+            count++;
+          }
+        });
+      }
+
+      setDueCount(count);
+    } catch (error) {
+      console.error('[QUIZ] Error updating due count:', error);
+    }
+  };
 
   // Text-to-Speech function for Chinese
   const speakChinese = (text) => {
@@ -85,7 +124,11 @@ export default function QuizScreen() {
     }
   };
 
-  const startWordQuiz = async () => {
+  const startAudioQuiz = async () => {
+    await startWordQuiz('audio');
+  };
+
+  const startWordQuiz = async (mode = 'words') => {
     try {
       // Try to get fresh progress from server first
       let progressData = null;
@@ -228,7 +271,7 @@ export default function QuizScreen() {
       progressData.statistics.currentSession = {
         startTime: Date.now(),
         endTime: null,
-        mode: 'words',
+        mode: mode,
         totalItems: selectedItems.length,
         correctCount: 0,
         accuracy: 0,
@@ -237,10 +280,17 @@ export default function QuizScreen() {
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
 
       setQuiz(selectedItems);
-      setQuizMode('words');
+      setQuizMode(mode);
       setCurrentIndex(0);
       setRevealed(false);
       setScore({ correct: 0, total: 0 });
+
+      // For audio quiz, auto-play the first word
+      if (mode === 'audio' && selectedItems.length > 0) {
+        setTimeout(() => {
+          speakChinese(selectedItems[0].word);
+        }, 500);
+      }
     } catch (error) {
       console.error('[QUIZ] Error starting quiz:', error);
       Alert.alert('Error', 'Could not start quiz: ' + error.message);
@@ -337,8 +387,16 @@ export default function QuizScreen() {
       setTimeout(() => {
         setFeedbackMessage(null);
         if (currentIndex < quiz.length - 1) {
-          setCurrentIndex(currentIndex + 1);
+          const nextIndex = currentIndex + 1;
+          setCurrentIndex(nextIndex);
           setRevealed(false);
+
+          // Auto-play audio for next question in audio mode
+          if (quizMode === 'audio') {
+            setTimeout(() => {
+              speakChinese(quiz[nextIndex].word);
+            }, 300);
+          }
         } else {
           // Quiz complete (handled below)
           finishQuiz(newScore);
@@ -468,7 +526,16 @@ export default function QuizScreen() {
           >
             <Text style={styles.modeIcon}>📝</Text>
             <Text style={styles.modeTitle}>Word Quiz</Text>
-            <Text style={styles.modeDesc}>Test compound word meanings</Text>
+            <Text style={styles.modeDesc}>Visual quiz with text and pinyin</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.modeButton}
+            onPress={startAudioQuiz}
+          >
+            <Text style={styles.modeIcon}>🔊</Text>
+            <Text style={styles.modeTitle}>Audio Quiz</Text>
+            <Text style={styles.modeDesc}>Listening comprehension practice</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -481,11 +548,19 @@ export default function QuizScreen() {
           </TouchableOpacity>
         </View>
 
+        {dueCount > 0 && (
+          <View style={styles.dueCardsContainer}>
+            <Text style={styles.dueCardsTitle}>📅 {dueCount} card{dueCount === 1 ? '' : 's'} due for review!</Text>
+            <Text style={styles.dueCardsDesc}>Time to practice your spaced repetition</Text>
+          </View>
+        )}
+
         <View style={styles.statsContainer}>
           <Text style={styles.statsTitle}>Quiz Tips:</Text>
           <Text style={styles.statsTip}>• Long-press characters in the Home tab to mark them as known</Text>
           <Text style={styles.statsTip}>• Known characters unlock compound word quizzes</Text>
           <Text style={styles.statsTip}>• Quiz yourself regularly for better retention</Text>
+          <Text style={styles.statsTip}>• Audio quiz helps with listening comprehension (听力)</Text>
         </View>
       </ScrollView>
     );
@@ -505,6 +580,7 @@ export default function QuizScreen() {
   // Determine quiz direction based on consecutive correct (progressive difficulty)
   const direction = getQuizDirection(currentItem.quizData);
   const isReversed = direction === 'english-to-chinese';
+  const isAudioMode = quizMode === 'audio';
 
   return (
     <View style={styles.container}>
@@ -524,14 +600,54 @@ export default function QuizScreen() {
           <Text style={styles.scoreText}>
             Score: {score.correct}/{score.total}
           </Text>
-          {isReversed && (
+          {isAudioMode && (
+            <Text style={styles.difficultyBadge}>🎧 Audio Mode</Text>
+          )}
+          {!isAudioMode && isReversed && (
             <Text style={styles.difficultyBadge}>🔥 Advanced Mode</Text>
           )}
         </View>
 
         {/* Quiz Card */}
         <View style={styles.quizCard}>
-        {!isReversed ? (
+        {isAudioMode ? (
+          <>
+            {/* Audio Mode: Play audio, hide characters until revealed */}
+            {!revealed ? (
+              <View style={styles.audioPrompt}>
+                <TouchableOpacity
+                  style={styles.playSoundButton}
+                  onPress={() => speakChinese(currentItem.word)}
+                >
+                  <Text style={styles.playSoundIcon}>🔊</Text>
+                  <Text style={styles.playSoundText}>Tap to hear again</Text>
+                </TouchableOpacity>
+                <Text style={styles.audioHint}>Listen and recall the meaning</Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.wordWithSpeaker}>
+                  <Text style={styles.quizWord}>{currentItem.word}</Text>
+                  <TouchableOpacity
+                    style={styles.speakerButton}
+                    onPress={() => speakChinese(currentItem.word)}
+                  >
+                    <Text style={styles.speakerIcon}>🔊</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.quizPinyin}>{currentItem.pinyin}</Text>
+                <View style={styles.meaningContainer}>
+                  <Text style={styles.meaningLabel}>Meaning:</Text>
+                  {currentItem.meanings.map((meaning, idx) => (
+                    <Text key={idx} style={styles.quizMeaning}>
+                      • {meaning}
+                    </Text>
+                  ))}
+                </View>
+              </>
+            )}
+          </>
+        ) : !isReversed ? (
           <>
             {/* Normal: Show Chinese, recall English */}
             <View style={styles.wordWithSpeaker}>
@@ -730,6 +846,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
+  },
+  dueCardsContainer: {
+    backgroundColor: '#fff3cd',
+    margin: 20,
+    marginBottom: 0,
+    padding: 20,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#ff9800',
+  },
+  dueCardsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#856404',
+    marginBottom: 4,
+  },
+  dueCardsDesc: {
+    fontSize: 14,
+    color: '#856404',
   },
   statsContainer: {
     backgroundColor: '#fff',
@@ -948,5 +1083,33 @@ const styles = StyleSheet.create({
   feedbackValue: {
     fontWeight: 'bold',
     color: '#333',
+  },
+  audioPrompt: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  playSoundButton: {
+    backgroundColor: '#667eea',
+    paddingVertical: 30,
+    paddingHorizontal: 40,
+    borderRadius: 50,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  playSoundIcon: {
+    fontSize: 64,
+  },
+  playSoundText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 10,
+  },
+  audioHint: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 10,
   },
 });
