@@ -486,18 +486,19 @@ export default function QuizScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Quiz Score */}
-      <View style={styles.scoreContainer}>
-        <Text style={styles.scoreText}>
-          Score: {score.correct}/{score.total}
-        </Text>
-        {isReversed && (
-          <Text style={styles.difficultyBadge}>🔥 Advanced Mode</Text>
-        )}
-      </View>
+      <ScrollView style={styles.scrollContent} contentContainerStyle={styles.scrollContentContainer}>
+        {/* Quiz Score */}
+        <View style={styles.scoreContainer}>
+          <Text style={styles.scoreText}>
+            Score: {score.correct}/{score.total}
+          </Text>
+          {isReversed && (
+            <Text style={styles.difficultyBadge}>🔥 Advanced Mode</Text>
+          )}
+        </View>
 
-      {/* Quiz Card */}
-      <View style={styles.quizCard}>
+        {/* Quiz Card */}
+        <View style={styles.quizCard}>
         {!isReversed ? (
           <>
             {/* Normal: Show Chinese, recall English */}
@@ -616,6 +617,7 @@ export default function QuizScreen() {
           </View>
         </View>
       )}
+      </ScrollView>
     </View>
   );
 }
@@ -624,6 +626,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  scrollContent: {
+    flex: 1,
+  },
+  scrollContentContainer: {
+    flexGrow: 1,
+    paddingBottom: 20,
   },
   header: {
     backgroundColor: '#667eea',
@@ -731,7 +740,7 @@ const styles = StyleSheet.create({
     padding: 30,
     borderRadius: 12,
     alignItems: 'center',
-    minHeight: 250,
+    minHeight: 150,
     justifyContent: 'center',
   },
   quizWord: {
