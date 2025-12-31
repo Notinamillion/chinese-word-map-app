@@ -8,11 +8,13 @@ import {
   Alert,
   Animated,
   Vibration,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
 import api from '../services/api';
+import COLORS from '../theme/colors';
 import {
   calculateNextReview,
   getQuizDirection,
@@ -754,6 +756,11 @@ export default function QuizScreen() {
           </TouchableOpacity>
           <Text style={styles.questionNumber}>{currentIndex + 1}/{quiz.length}</Text>
         </View>
+        <Image
+          source={require('../../assets/logo-icon-only.png')}
+          style={styles.headerLogo}
+          resizeMode="contain"
+        />
         <View style={styles.headerRight}>
           <Text style={styles.scoreText}>{score.correct}/{score.total}</Text>
           {isAudioMode && <Text style={styles.modeBadge}>🎧</Text>}
@@ -1008,7 +1015,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: COLORS.primaryLight,
+    backgroundColor: COLORS.white,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -1019,6 +1027,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  headerLogo: {
+    width: 32,
+    height: 32,
   },
   quitButton: {
     width: 32,
@@ -1040,7 +1052,7 @@ const styles = StyleSheet.create({
   scoreText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#667eea',
+    color: COLORS.primary,
   },
   modeBadge: {
     fontSize: 20,
@@ -1181,12 +1193,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 20,
-    backgroundColor: '#fafafa',
+    backgroundColor: COLORS.white,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#f0f0f0',
+    borderColor: COLORS.primaryLight,
     padding: 24,
     minHeight: 200,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   wordWithSpeaker: {
     flexDirection: 'row',
@@ -1203,19 +1220,24 @@ const styles = StyleSheet.create({
   speakerButton: {
     padding: 12,
     marginBottom: 12,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: COLORS.primaryLight,
     borderRadius: 50,
     width: 56,
     height: 56,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   speakerIcon: {
     fontSize: 28,
   },
   quizPinyin: {
     fontSize: 18,
-    color: '#667eea',
+    color: COLORS.primary,
     marginBottom: 12,
   },
   meaningContainer: {
@@ -1248,14 +1270,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   revealButton: {
-    backgroundColor: '#667eea',
+    backgroundColor: COLORS.primary,
     paddingVertical: 18,
     paddingHorizontal: 24,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
-    shadowColor: '#667eea',
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -1300,28 +1322,28 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   quality0: {
-    backgroundColor: '#ffebee',
-    borderColor: '#f44336',
+    backgroundColor: COLORS.qualityForgot.bg,
+    borderColor: COLORS.qualityForgot.border,
   },
   quality1: {
-    backgroundColor: '#fff3e0',
-    borderColor: '#ff9800',
+    backgroundColor: COLORS.qualityHard.bg,
+    borderColor: COLORS.qualityHard.border,
   },
   quality2: {
-    backgroundColor: '#fff9e0',
-    borderColor: '#ffc107',
+    backgroundColor: COLORS.qualityHard.bg,
+    borderColor: COLORS.qualityHard.border,
   },
   quality3: {
-    backgroundColor: '#e3f2fd',
-    borderColor: '#2196F3',
+    backgroundColor: COLORS.qualityGood.bg,
+    borderColor: COLORS.qualityGood.border,
   },
   quality4: {
-    backgroundColor: '#e8f5e9',
-    borderColor: '#4caf50',
+    backgroundColor: COLORS.qualityGood.bg,
+    borderColor: COLORS.qualityGood.border,
   },
   quality5: {
-    backgroundColor: '#e8f5e9',
-    borderColor: '#4caf50',
+    backgroundColor: COLORS.qualityPerfect.bg,
+    borderColor: COLORS.qualityPerfect.border,
   },
   feedbackContainer: {
     backgroundColor: '#f0f4ff',
