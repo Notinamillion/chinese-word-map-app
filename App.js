@@ -265,7 +265,7 @@ function ProfilePlaceholder({ onLogout }) {
   return (
     <View style={styles.centered}>
       <Image
-        source={require('./assets/ZhongMap_logo.png')}
+        source={require('./assets/logo-square.png')}
         style={styles.profileLogo}
         resizeMode="contain"
       />
