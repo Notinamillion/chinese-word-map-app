@@ -11,7 +11,8 @@
       "Bash(taskkill /F /PID 119408)",
       "Bash(taskkill //F //PID 119408)",
       "Bash(npm install:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(ls:*)"
     ]
   }
 }

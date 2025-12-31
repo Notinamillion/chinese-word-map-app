@@ -1,32 +1,32 @@
 {
   "expo": {
-    "name": "Chinese Word Map",
-    "slug": "chinesewordappmap",
-    "version": "1.4.0",
+    "name": "ZhongMap",
+    "slug": "zhongmap",
+    "version": "1.5.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#667eea"
+      "backgroundColor": "#FFFFFF"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.sbateman.chinesewordmap"
+      "bundleIdentifier": "com.sbateman.zhongmap"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#667eea"
+        "backgroundColor": "#FFFFFF"
       },
-      "package": "com.sbateman.chinesewordmap",
+      "package": "com.sbateman.zhongmap",
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE"
       ],
-      "versionCode": 7
+      "versionCode": 8
     },
     "web": {
       "favicon": "./assets/favicon.png"

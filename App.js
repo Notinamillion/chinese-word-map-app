@@ -22,11 +22,23 @@ const Stack = createNativeStackNavigator();
 // Home Stack Navigator
 function HomeStack() {
   return (
-    <Stack.Navigator>
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: COLORS.white,
+          borderBottomColor: COLORS.primaryLight,
+          borderBottomWidth: 1,
+        },
+        headerTintColor: COLORS.primary,
+        headerTitleStyle: {
+          fontWeight: '700',
+        },
+      }}
+    >
       <Stack.Screen
         name="HomeList"
         component={HomeScreen}
-        options={{ title: 'Chinese Word Map' }}
+        options={{ title: 'ZhongMap' }}
       />
       <Stack.Screen
         name="CharacterDetail"
