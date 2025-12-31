@@ -264,14 +264,19 @@ export default function App() {
 function ProfilePlaceholder({ onLogout }) {
   return (
     <View style={styles.centered}>
-      <Text style={styles.placeholderText}>👤 Profile Screen</Text>
-      <Text style={styles.placeholderSubtext}>Stats and settings</Text>
-      <Text
-        style={[styles.placeholderSubtext, { color: COLORS.primary, marginTop: 20, fontWeight: '600' }]}
+      <Image
+        source={require('./assets/ZhongMap_logo.png')}
+        style={styles.profileLogo}
+        resizeMode="contain"
+      />
+      <Text style={styles.placeholderText}>Profile</Text>
+      <Text style={styles.placeholderSubtext}>Stats and settings coming soon</Text>
+      <TouchableOpacity
+        style={styles.logoutButton}
         onPress={onLogout}
       >
-        Logout
-      </Text>
+        <Text style={styles.logoutButtonText}>Logout</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -281,35 +286,57 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.lightGray,
+  },
+  profileLogo: {
+    width: 150,
+    height: 150,
+    marginBottom: 20,
   },
   offlineBanner: {
-    backgroundColor: '#ff9800',
+    backgroundColor: COLORS.primaryYellow,
     padding: 10,
     alignItems: 'center',
   },
   offlineText: {
-    color: '#fff',
+    color: COLORS.white,
     fontWeight: '600',
   },
   syncingBanner: {
-    backgroundColor: '#2196F3',
+    backgroundColor: COLORS.info,
     padding: 10,
     alignItems: 'center',
   },
   syncingText: {
-    color: '#fff',
+    color: COLORS.white,
     fontWeight: '600',
   },
   placeholderText: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
+    color: COLORS.textDark,
   },
   placeholderSubtext: {
     fontSize: 16,
-    color: '#666',
+    color: COLORS.textMedium,
     marginTop: 10,
+  },
+  logoutButton: {
+    marginTop: 30,
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  logoutButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
   },
   badge: {
     position: 'absolute',

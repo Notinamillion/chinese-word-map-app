@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import syncManager from '../services/syncManager';
+import { COLORS } from '../theme/colors';
 
 export default function CharacterDetailScreen({ route }) {
   const { character } = route.params;
@@ -240,45 +241,50 @@ export default function CharacterDetailScreen({ route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.lightGray,
   },
   characterSection: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.white,
     padding: 30,
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: COLORS.primaryLight,
   },
   character: {
     fontSize: 120,
     fontWeight: 'bold',
-    color: '#333',
+    color: COLORS.textDark,
   },
   pinyin: {
     fontSize: 24,
-    color: '#667eea',
+    color: COLORS.primary,
     marginTop: 10,
+    fontWeight: '600',
   },
   progressSection: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.white,
     padding: 20,
     marginTop: 10,
+    marginHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    color: COLORS.textDark,
     marginBottom: 5,
   },
   sectionHint: {
     fontSize: 14,
-    color: '#666',
+    color: COLORS.textMedium,
     marginBottom: 15,
     fontStyle: 'italic',
   },
   progressBar: {
     height: 20,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: COLORS.mediumGray,
     borderRadius: 10,
     overflow: 'hidden',
     marginVertical: 10,
@@ -292,9 +298,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   buttonSection: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.white,
     padding: 20,
     marginTop: 10,
+    marginHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight,
   },
   progressButton: {
     padding: 15,
@@ -303,39 +313,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   notStarted: {
-    backgroundColor: '#999',
+    backgroundColor: COLORS.textLight,
   },
   learning: {
-    backgroundColor: '#ff9800',
+    backgroundColor: COLORS.primaryYellow,
   },
   mastered: {
-    backgroundColor: '#4caf50',
+    backgroundColor: COLORS.success,
   },
   buttonText: {
-    color: '#fff',
+    color: COLORS.white,
     fontSize: 16,
     fontWeight: '600',
   },
   section: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.white,
     padding: 20,
     marginTop: 10,
     marginBottom: 10,
+    marginHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight,
   },
   meaningText: {
     fontSize: 16,
-    color: '#333',
+    color: COLORS.textDark,
     marginVertical: 3,
     lineHeight: 24,
   },
   compoundItem: {
     borderLeftWidth: 3,
-    borderLeftColor: '#667eea',
+    borderLeftColor: COLORS.primary,
     paddingLeft: 15,
     paddingRight: 15,
     paddingVertical: 12,
     marginVertical: 8,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: COLORS.lightGray,
     borderRadius: 8,
   },
   compoundHeader: {
@@ -352,38 +366,39 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     borderWidth: 2,
-    borderColor: '#ccc',
+    borderColor: COLORS.darkGray,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 12,
   },
   compoundCheckboxChecked: {
-    backgroundColor: '#4caf50',
-    borderColor: '#4caf50',
+    backgroundColor: COLORS.success,
+    borderColor: COLORS.success,
   },
   checkmark: {
-    color: '#fff',
+    color: COLORS.white,
     fontSize: 18,
     fontWeight: 'bold',
   },
   compoundWord: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
+    color: COLORS.textDark,
   },
   compoundTraditional: {
     fontSize: 18,
-    color: '#666',
+    color: COLORS.textMedium,
     marginTop: 2,
   },
   compoundPinyin: {
     fontSize: 16,
-    color: '#667eea',
+    color: COLORS.primary,
     marginTop: 4,
+    fontWeight: '600',
   },
   compoundMeaning: {
     fontSize: 14,
-    color: '#333',
+    color: COLORS.textDark,
     marginTop: 6,
     lineHeight: 20,
   },
