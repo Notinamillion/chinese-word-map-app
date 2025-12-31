@@ -926,7 +926,7 @@ export default function QuizScreen() {
           <>
             {console.log('[QUIZ] ✅ RENDERING REVEAL BUTTON - revealed:', revealed, 'feedbackMessage:', feedbackMessage)}
             <TouchableOpacity
-              style={[styles.quizButton, styles.revealButton]}
+              style={styles.revealButton}
               onPress={revealAnswer}
             >
               <Text style={styles.quizButtonText}>👁️ Reveal Answer</Text>
@@ -1225,7 +1225,11 @@ const styles = StyleSheet.create({
   revealButton: {
     backgroundColor: '#667eea',
     paddingVertical: 16,
+    paddingHorizontal: 24,
     borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
   },
   correctButton: {
     backgroundColor: '#4caf50',
