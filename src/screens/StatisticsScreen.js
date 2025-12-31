@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
+import { COLORS } from '../theme/colors';
 
 export default function StatisticsScreen() {
   const [progressData, setProgressData] = useState(null);
@@ -596,7 +597,7 @@ function WordCategory({ title, words, color }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.lightGray,
   },
   centered: {
     flex: 1,
@@ -604,19 +605,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   header: {
-    backgroundColor: '#667eea',
+    backgroundColor: COLORS.primary,
     padding: 30,
     alignItems: 'center',
   },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#fff',
+    color: COLORS.white,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#fff',
+    color: COLORS.white,
     opacity: 0.9,
   },
   summaryContainer: {
@@ -628,72 +629,81 @@ const styles = StyleSheet.create({
   summaryCard: {
     flex: 1,
     minWidth: '45%',
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.white,
     padding: 20,
     borderRadius: 12,
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight,
   },
   summaryNumber: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#667eea',
+    color: COLORS.primary,
     marginBottom: 8,
   },
   summaryLabel: {
     fontSize: 14,
-    color: '#666',
+    color: COLORS.textMedium,
+    fontWeight: '600',
   },
   tabs: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.white,
     marginHorizontal: 20,
     marginTop: 10,
-    borderRadius: 8,
+    borderRadius: 12,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight,
   },
   tab: {
     flex: 1,
     paddingVertical: 12,
     alignItems: 'center',
-    borderBottomWidth: 2,
+    borderBottomWidth: 3,
     borderBottomColor: 'transparent',
   },
   tabActive: {
-    borderBottomColor: '#667eea',
+    borderBottomColor: COLORS.primary,
+    backgroundColor: COLORS.primaryLight,
   },
   tabText: {
     fontSize: 14,
-    color: '#666',
+    color: COLORS.textMedium,
     fontWeight: '600',
   },
   tabTextActive: {
-    color: '#667eea',
+    color: COLORS.primary,
+    fontWeight: '700',
   },
   section: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.white,
     margin: 20,
     padding: 20,
     borderRadius: 12,
-    shadowColor: '#000',
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    color: COLORS.textDark,
     marginBottom: 16,
   },
   emptyState: {
     fontSize: 14,
-    color: '#999',
+    color: COLORS.textLight,
     textAlign: 'center',
     fontStyle: 'italic',
     paddingVertical: 20,
@@ -708,29 +718,29 @@ const styles = StyleSheet.create({
   },
   progressBarLabel: {
     fontSize: 14,
-    color: '#333',
+    color: COLORS.textDark,
     fontWeight: '600',
   },
   progressBarCount: {
     fontSize: 14,
-    color: '#666',
+    color: COLORS.textMedium,
   },
   progressBarTrack: {
-    height: 8,
-    backgroundColor: '#e0e0e0',
-    borderRadius: 4,
+    height: 10,
+    backgroundColor: COLORS.mediumGray,
+    borderRadius: 5,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 5,
   },
   reviewItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: COLORS.primaryLight,
   },
   reviewIcon: {
     fontSize: 20,
@@ -739,7 +749,7 @@ const styles = StyleSheet.create({
   reviewLabel: {
     flex: 1,
     fontSize: 16,
-    color: '#333',
+    color: COLORS.textDark,
   },
   reviewCount: {
     fontSize: 18,

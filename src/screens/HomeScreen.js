@@ -11,6 +11,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
 import syncManager from '../services/syncManager';
+import { COLORS } from '../theme/colors';
 
 export default function HomeScreen({ navigation }) {
   console.log('[HOMESCREEN] Component rendering...');
@@ -145,7 +146,7 @@ export default function HomeScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: COLORS.lightGray,
   },
   centered: {
     flex: 1,
@@ -153,13 +154,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   searchInput: {
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.white,
     margin: 10,
-    padding: 12,
-    borderRadius: 8,
+    padding: 14,
+    borderRadius: 12,
     fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#ddd',
+    borderWidth: 2,
+    borderColor: COLORS.primaryLight,
+    color: COLORS.textDark,
   },
   grid: {
     padding: 5,
@@ -167,31 +169,38 @@ const styles = StyleSheet.create({
   charCard: {
     flex: 1,
     margin: 5,
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.white,
     borderRadius: 12,
     padding: 12,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#7ED321',
+    borderColor: COLORS.mediumGray,
     minHeight: 120,
+    shadowColor: COLORS.textLight,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   charCardKnown: {
-    backgroundColor: '#e8f5e9',
-    borderColor: '#44dd44',
+    backgroundColor: COLORS.greenLight,
+    borderColor: COLORS.success,
   },
   charText: {
     fontSize: 40,
     fontWeight: 'bold',
     marginBottom: 5,
+    color: COLORS.textDark,
   },
   pinyinText: {
     fontSize: 14,
-    color: '#666',
+    color: COLORS.primary,
     marginBottom: 5,
+    fontWeight: '600',
   },
   meaningText: {
     fontSize: 11,
-    color: '#999',
+    color: COLORS.textMedium,
     textAlign: 'center',
   },
   knownBadge: {
@@ -199,6 +208,6 @@ const styles = StyleSheet.create({
     top: 5,
     right: 5,
     fontSize: 20,
-    color: '#44dd44',
+    color: COLORS.success,
   },
 });
