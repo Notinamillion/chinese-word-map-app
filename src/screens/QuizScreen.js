@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Animated,
+  Vibration,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -928,6 +930,7 @@ export default function QuizScreen() {
             <TouchableOpacity
               style={styles.revealButton}
               onPress={revealAnswer}
+              activeOpacity={0.8}
             >
               <Text style={styles.quizButtonText}>👁️ Reveal Answer</Text>
             </TouchableOpacity>
@@ -939,7 +942,11 @@ export default function QuizScreen() {
               <View style={styles.qualityButtonsRow}>
               <TouchableOpacity
                 style={[styles.qualityButtonCompact, styles.quality0]}
-                onPress={() => markQuality(0)}
+                onPress={() => {
+                  Vibration.vibrate(50);
+                  markQuality(0);
+                }}
+                activeOpacity={0.7}
               >
                 <Text style={styles.qualityEmoji}>😵</Text>
                 <Text style={styles.qualityText}>Forgot</Text>
@@ -947,7 +954,11 @@ export default function QuizScreen() {
 
               <TouchableOpacity
                 style={[styles.qualityButtonCompact, styles.quality2]}
-                onPress={() => markQuality(2)}
+                onPress={() => {
+                  Vibration.vibrate(50);
+                  markQuality(2);
+                }}
+                activeOpacity={0.7}
               >
                 <Text style={styles.qualityEmoji}>😕</Text>
                 <Text style={styles.qualityText}>Hard</Text>
@@ -955,7 +966,11 @@ export default function QuizScreen() {
 
               <TouchableOpacity
                 style={[styles.qualityButtonCompact, styles.quality4]}
-                onPress={() => markQuality(4)}
+                onPress={() => {
+                  Vibration.vibrate(50);
+                  markQuality(4);
+                }}
+                activeOpacity={0.7}
               >
                 <Text style={styles.qualityEmoji}>🙂</Text>
                 <Text style={styles.qualityText}>Good</Text>
@@ -963,7 +978,11 @@ export default function QuizScreen() {
 
               <TouchableOpacity
                 style={[styles.qualityButtonCompact, styles.quality5]}
-                onPress={() => markQuality(5)}
+                onPress={() => {
+                  Vibration.vibrate(50);
+                  markQuality(5);
+                }}
+                activeOpacity={0.7}
               >
                 <Text style={styles.qualityEmoji}>😄</Text>
                 <Text style={styles.qualityText}>Perfect</Text>
@@ -1162,10 +1181,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 20,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#e0e0e0',
+    backgroundColor: '#fafafa',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
     padding: 24,
     minHeight: 200,
   },
@@ -1182,11 +1201,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   speakerButton: {
-    padding: 8,
+    padding: 12,
     marginBottom: 12,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 50,
+    width: 56,
+    height: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   speakerIcon: {
-    fontSize: 32,
+    fontSize: 28,
   },
   quizPinyin: {
     fontSize: 18,
@@ -1224,12 +1249,17 @@ const styles = StyleSheet.create({
   },
   revealButton: {
     backgroundColor: '#667eea',
-    paddingVertical: 16,
+    paddingVertical: 18,
     paddingHorizontal: 24,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
+    shadowColor: '#667eea',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   correctButton: {
     backgroundColor: '#4caf50',
@@ -1251,19 +1281,21 @@ const styles = StyleSheet.create({
   },
   qualityButtonCompact: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 16,
     paddingHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#e0e0e0',
+    minHeight: 70,
+    justifyContent: 'center',
   },
   qualityEmoji: {
-    fontSize: 24,
-    marginBottom: 4,
+    fontSize: 28,
+    marginBottom: 6,
   },
   qualityText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: '#666',
   },
