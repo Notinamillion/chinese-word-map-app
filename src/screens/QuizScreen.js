@@ -803,6 +803,7 @@ export default function QuizScreen() {
         ) : !isReversed ? (
           <>
             {/* Normal: Show Chinese, recall English */}
+            {console.log('[QUIZ] 📱 Rendering NORMAL mode - word:', currentItem.word, 'pinyin:', currentItem.pinyin, 'meanings:', currentItem.meanings)}
             <View style={styles.wordWithSpeaker}>
               <Text style={styles.quizWord}>{currentItem.word}</Text>
               <TouchableOpacity
@@ -1161,6 +1162,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 20,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#e0e0e0',
+    padding: 24,
+    minHeight: 200,
   },
   wordWithSpeaker: {
     flexDirection: 'row',
@@ -1173,6 +1180,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 8,
+    backgroundColor: '#ffffcc', // Temporary: yellow background to make text visible
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   speakerButton: {
     padding: 8,
