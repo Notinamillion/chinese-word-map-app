@@ -10,6 +10,11 @@ import HomeScreen from './src/screens/HomeScreen';
 import CharacterDetailScreen from './src/screens/CharacterDetailScreen';
 import QuizScreen from './src/screens/QuizScreen';
 import StatisticsScreen from './src/screens/StatisticsScreen';
+import { COLORS } from './src/theme/colors';
+import HomeIcon from './src/components/icons/HomeIcon';
+import QuizIcon from './src/components/icons/QuizIcon';
+import StatsIcon from './src/components/icons/StatsIcon';
+import ProfileIcon from './src/components/icons/ProfileIcon';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -169,9 +174,20 @@ export default function App() {
       <NavigationContainer>
         <Tab.Navigator
           screenOptions={{
-            tabBarActiveTintColor: '#667eea',
-            tabBarInactiveTintColor: '#999',
-            tabBarStyle: { paddingBottom: 5, height: 60 },
+            tabBarActiveTintColor: COLORS.primary,
+            tabBarInactiveTintColor: COLORS.textLight,
+            tabBarStyle: {
+              paddingBottom: 8,
+              paddingTop: 8,
+              height: 65,
+              borderTopColor: COLORS.primaryLight,
+              borderTopWidth: 1,
+              backgroundColor: COLORS.white,
+            },
+            tabBarLabelStyle: {
+              fontSize: 12,
+              fontWeight: '600',
+            },
           }}
         >
           <Tab.Screen
@@ -179,7 +195,9 @@ export default function App() {
             component={HomeStack}
             options={{
               tabBarLabel: 'Characters',
-              tabBarIcon: ({ color }) => <Text style={{ fontSize: 24 }}>🏠</Text>,
+              tabBarIcon: ({ color, focused }) => (
+                <HomeIcon size={26} color={color} filled={focused} />
+              ),
               headerShown: false,
             }}
           />
@@ -189,9 +207,9 @@ export default function App() {
             component={QuizScreen}
             options={{
               tabBarLabel: 'Quiz',
-              tabBarIcon: ({ color }) => (
+              tabBarIcon: ({ color, focused }) => (
                 <View>
-                  <Text style={{ fontSize: 24 }}>📝</Text>
+                  <QuizIcon size={26} color={color} filled={focused} />
                   {dueCardsCount > 0 && (
                     <View style={styles.badge}>
                       <Text style={styles.badgeText}>{dueCardsCount}</Text>
@@ -207,7 +225,9 @@ export default function App() {
             component={StatisticsScreen}
             options={{
               tabBarLabel: 'Statistics',
-              tabBarIcon: ({ color }) => <Text style={{ fontSize: 24 }}>📊</Text>,
+              tabBarIcon: ({ color, focused }) => (
+                <StatsIcon size={26} color={color} filled={focused} />
+              ),
             }}
           />
 
@@ -215,7 +235,9 @@ export default function App() {
             name="Profile"
             options={{
               tabBarLabel: 'Profile',
-              tabBarIcon: ({ color }) => <Text style={{ fontSize: 24 }}>👤</Text>,
+              tabBarIcon: ({ color, focused }) => (
+                <ProfileIcon size={26} color={color} filled={focused} />
+              ),
             }}
           >
             {() => <ProfilePlaceholder onLogout={handleLogout} />}
@@ -233,7 +255,7 @@ function ProfilePlaceholder({ onLogout }) {
       <Text style={styles.placeholderText}>👤 Profile Screen</Text>
       <Text style={styles.placeholderSubtext}>Stats and settings</Text>
       <Text
-        style={[styles.placeholderSubtext, { color: '#667eea', marginTop: 20 }]}
+        style={[styles.placeholderSubtext, { color: COLORS.primary, marginTop: 20, fontWeight: '600' }]}
         onPress={onLogout}
       >
         Logout
@@ -281,17 +303,19 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: -6,
     top: -3,
-    backgroundColor: '#f44336',
+    backgroundColor: COLORS.error,
     borderRadius: 10,
     minWidth: 20,
     height: 20,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: COLORS.white,
   },
   badgeText: {
-    color: '#fff',
-    fontSize: 12,
+    color: COLORS.white,
+    fontSize: 11,
     fontWeight: 'bold',
   },
 });
