@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
 import api from '../services/api';
@@ -68,6 +69,16 @@ export default function QuizScreen() {
       Speech.stop();
     };
   }, []);
+
+  // Debug state changes
+  useEffect(() => {
+    console.log('[QUIZ] 📊 State changed:', {
+      currentIndex,
+      revealed,
+      hasFeedback: !!feedbackMessage,
+      quizLength: quiz?.length || 0,
+    });
+  }, [currentIndex, revealed, feedbackMessage]);
 
   const updateDueCount = async () => {
     try {
@@ -258,7 +269,10 @@ export default function QuizScreen() {
 
       // Use SM-2 prioritization: due items first, then struggling, then new, then mastered
       const prioritized = prioritizeQuizItems(itemsToQuiz);
-      const selectedItems = prioritized.slice(0, Math.min(10, prioritized.length));
+
+      // Continuous mode: take first 10 for initial batch
+      const batchSize = 10;
+      const selectedItems = prioritized.slice(0, Math.min(batchSize, prioritized.length));
 
       console.log('[QUIZ] Prioritized quiz items:', selectedItems.map(item => ({
         word: item.word,
@@ -298,11 +312,20 @@ export default function QuizScreen() {
   };
 
   const revealAnswer = () => {
+    console.log('[QUIZ] 🔍 Revealing answer - currentIndex:', currentIndex);
     setRevealed(true);
     setQuizStartTime(Date.now()); // Start timing from reveal (for quality suggestion)
+
+    // Auto-play Chinese audio when revealing answer (except in audio mode which already plays)
+    if (quizMode !== 'audio' && quiz && quiz[currentIndex]) {
+      setTimeout(() => {
+        speakChinese(quiz[currentIndex].word);
+      }, 200); // Small delay to feel natural
+    }
   };
 
   const markQuality = async (quality) => {
+    console.log('[QUIZ] ⭐ Marking quality:', quality, 'at index:', currentIndex);
     // Quality >= 3 is considered "correct"
     const isCorrect = quality >= 3;
     const newScore = {
@@ -385,25 +408,150 @@ export default function QuizScreen() {
 
       // Auto-advance after showing feedback
       setTimeout(() => {
-        setFeedbackMessage(null);
-        if (currentIndex < quiz.length - 1) {
-          const nextIndex = currentIndex + 1;
-          setCurrentIndex(nextIndex);
-          setRevealed(false);
+        const advanceToNext = async () => {
+          console.log('[QUIZ] ⏭️ Auto-advancing - clearing feedback and resetting revealed');
 
-          // Auto-play audio for next question in audio mode
-          if (quizMode === 'audio') {
-            setTimeout(() => {
-              speakChinese(quiz[nextIndex].word);
-            }, 300);
+          // IMPORTANT: Reset revealed BEFORE clearing feedback to prevent race condition
+          setRevealed(false);
+          setFeedbackMessage(null);
+
+          if (currentIndex < quiz.length - 1) {
+            const nextIndex = currentIndex + 1;
+            console.log('[QUIZ] ⏭️ Moving to next question:', nextIndex);
+            setCurrentIndex(nextIndex);
+
+            // Auto-play audio for next question in audio mode
+            if (quizMode === 'audio') {
+              setTimeout(() => {
+                speakChinese(quiz[nextIndex].word);
+              }, 300);
+            }
+          } else {
+            // End of current batch - load more questions
+            const hasMore = await loadNextBatch();
+            if (hasMore) {
+              // Continue to next question
+              const nextIndex = currentIndex + 1;
+              // IMPORTANT: Reset revealed BEFORE changing index
+              setRevealed(false);
+              setCurrentIndex(nextIndex);
+
+              // Auto-play audio for next question in audio mode
+              if (quizMode === 'audio') {
+                setTimeout(() => {
+                  speakChinese(quiz[nextIndex].word);
+                }, 300);
+              }
+            } else {
+              // No more items available, finish quiz
+              finishQuiz(newScore);
+            }
           }
-        } else {
-          // Quiz complete (handled below)
-          finishQuiz(newScore);
-        }
+        };
+        advanceToNext();
       }, 2000); // Show feedback for 2 seconds
     } catch (error) {
       console.error('[QUIZ] Error saving quiz result:', error);
+    }
+  };
+
+  const loadNextBatch = async () => {
+    try {
+      console.log('[QUIZ] Loading next batch of questions...');
+
+      // Get current progress
+      const cachedProgress = await AsyncStorage.getItem('@progress');
+      const progressData = cachedProgress ? JSON.parse(cachedProgress) : null;
+
+      if (!progressData) {
+        console.error('[QUIZ] No progress data found');
+        return false;
+      }
+
+      const quizItems = [];
+
+      // Add individual characters marked as known
+      if (progressData.characterProgress) {
+        Object.keys(progressData.characterProgress).forEach(char => {
+          const charData = progressData.characterProgress[char];
+          if (charData && charData.known && characters[char]) {
+            quizItems.push({
+              type: 'character',
+              word: char,
+              pinyin: characters[char].pinyin,
+              meanings: characters[char].meanings,
+              char: char,
+              quizData: charData.quizScore || null,
+            });
+          }
+        });
+      }
+
+      // Add compound words
+      if (progressData.compoundProgress) {
+        Object.keys(progressData.compoundProgress).forEach(char => {
+          const charProgress = progressData.compoundProgress[char];
+          if (charProgress && charProgress.known && Array.isArray(charProgress.known)) {
+            const charData = characters[char];
+            if (charData && charData.compounds) {
+              charProgress.known.forEach(word => {
+                const found = charData.compounds.find(c => c.word === word);
+                if (found && !quizItems.find(w => w.word === word)) {
+                  quizItems.push({
+                    type: 'compound',
+                    word: found.word,
+                    pinyin: found.pinyin,
+                    meanings: found.meanings,
+                    char: char,
+                    quizData: charProgress.quizScores?.[word] || null,
+                  });
+                }
+              });
+            }
+          }
+        });
+      }
+
+      // Filter out items already in current quiz
+      const currentWords = quiz.map(item => item.word);
+      const availableItems = quizItems.filter(item => !currentWords.includes(item.word));
+
+      // Filter out recently reviewed (last 5 minutes)
+      const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+      const eligibleItems = availableItems.filter(item => {
+        if (!item.quizData || !item.quizData.lastReviewed) {
+          return true;
+        }
+        return item.quizData.lastReviewed < fiveMinutesAgo;
+      });
+
+      const itemsToQuiz = eligibleItems.length >= 10 ? eligibleItems : availableItems;
+
+      if (itemsToQuiz.length === 0) {
+        console.log('[QUIZ] No more items available');
+        return false;
+      }
+
+      // Prioritize and select next batch
+      const prioritized = prioritizeQuizItems(itemsToQuiz);
+      const batchSize = 10;
+      const nextBatch = prioritized.slice(0, Math.min(batchSize, prioritized.length));
+
+      console.log('[QUIZ] Loaded', nextBatch.length, 'new questions');
+
+      // Append to current quiz
+      setQuiz(prev => [...prev, ...nextBatch]);
+
+      // Update session totalItems
+      if (progressData.statistics.currentSession) {
+        progressData.statistics.currentSession.totalItems += nextBatch.length;
+        await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
+      }
+
+      return true;
+    } catch (error) {
+      console.error('[QUIZ] Error loading next batch:', error);
+      return false;
     }
   };
 
@@ -522,7 +670,7 @@ export default function QuizScreen() {
         <View style={styles.modeContainer}>
           <TouchableOpacity
             style={styles.modeButton}
-            onPress={startWordQuiz}
+            onPress={() => startWordQuiz()}
           >
             <Text style={styles.modeIcon}>📝</Text>
             <Text style={styles.modeTitle}>Word Quiz</Text>
@@ -531,7 +679,7 @@ export default function QuizScreen() {
 
           <TouchableOpacity
             style={styles.modeButton}
-            onPress={startAudioQuiz}
+            onPress={() => startAudioQuiz()}
           >
             <Text style={styles.modeIcon}>🔊</Text>
             <Text style={styles.modeTitle}>Audio Quiz</Text>
@@ -577,37 +725,42 @@ export default function QuizScreen() {
 
   const currentItem = quiz[currentIndex];
 
+  // Safety check: if currentIndex is out of bounds, return loading state
+  if (!currentItem) {
+    console.log('[QUIZ] ⚠️ currentItem is undefined - currentIndex:', currentIndex, 'quiz.length:', quiz.length);
+    return (
+      <View style={styles.container}>
+        <Text>Loading next question...</Text>
+      </View>
+    );
+  }
+
   // Determine quiz direction based on consecutive correct (progressive difficulty)
   const direction = getQuizDirection(currentItem.quizData);
   const isReversed = direction === 'english-to-chinese';
   const isAudioMode = quizMode === 'audio';
 
+  console.log('[QUIZ] 🎯 Rendering quiz for:', currentItem.word, '- direction:', direction, 'isReversed:', isReversed, 'isAudioMode:', isAudioMode);
+
   return (
-    <View style={styles.container}>
-      {/* Quiz Header */}
-      <View style={styles.quizHeader}>
-        <Text style={styles.quizProgress}>
-          Question {currentIndex + 1}/{quiz.length}
-        </Text>
-        <TouchableOpacity onPress={quitQuiz}>
-          <Text style={styles.quitButton}>✕ Quit</Text>
-        </TouchableOpacity>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      {/* Compact header */}
+      <View style={styles.compactHeader}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={quitQuiz} style={styles.quitButton}>
+            <Text style={styles.quitButtonText}>✕</Text>
+          </TouchableOpacity>
+          <Text style={styles.questionNumber}>{currentIndex + 1}/{quiz.length}</Text>
+        </View>
+        <View style={styles.headerRight}>
+          <Text style={styles.scoreText}>{score.correct}/{score.total}</Text>
+          {isAudioMode && <Text style={styles.modeBadge}>🎧</Text>}
+          {!isAudioMode && isReversed && <Text style={styles.modeBadge}>🔥</Text>}
+        </View>
       </View>
 
-      <ScrollView style={styles.scrollContent} contentContainerStyle={styles.scrollContentContainer}>
-        {/* Quiz Score */}
-        <View style={styles.scoreContainer}>
-          <Text style={styles.scoreText}>
-            Score: {score.correct}/{score.total}
-          </Text>
-          {isAudioMode && (
-            <Text style={styles.difficultyBadge}>🎧 Audio Mode</Text>
-          )}
-          {!isAudioMode && isReversed && (
-            <Text style={styles.difficultyBadge}>🔥 Advanced Mode</Text>
-          )}
-        </View>
-
+      {/* Main content area - no ScrollView, fixed layout */}
+      <View style={styles.contentArea}>
         {/* Quiz Card */}
         <View style={styles.quizCard}>
         {isAudioMode ? (
@@ -700,103 +853,190 @@ export default function QuizScreen() {
             )}
           </>
         )}
+        </View>
       </View>
 
-      {/* Quiz Actions */}
-      {feedbackMessage ? (
-        <View style={styles.feedbackContainer}>
-          <Text style={styles.feedbackTitle}>{feedbackMessage.quality}</Text>
-          <View style={styles.feedbackDetails}>
-            <Text style={styles.feedbackText}>
-              Next review: <Text style={styles.feedbackValue}>{feedbackMessage.nextReview}</Text>
-            </Text>
-            <Text style={styles.feedbackText}>
-              Interval: <Text style={styles.feedbackValue}>{feedbackMessage.interval} {feedbackMessage.interval === 1 ? 'day' : 'days'}</Text>
-            </Text>
-            <Text style={styles.feedbackText}>
-              Score: <Text style={styles.feedbackValue}>{feedbackMessage.score}/5</Text>
-            </Text>
+      {/* Fixed bottom actions */}
+      <View style={styles.bottomActionsContainer}>
+        {(() => {
+          console.log('[QUIZ] 🎨 Rendering bottom - feedbackMessage:', !!feedbackMessage, 'revealed:', revealed);
+          return null;
+        })()}
+        {feedbackMessage ? (
+          <TouchableOpacity
+            style={styles.feedbackContainer}
+            onPress={() => {
+              const skipToNext = async () => {
+                console.log('[QUIZ] ⏩ Manual skip - resetting state');
+                // IMPORTANT: Reset revealed BEFORE clearing feedback to prevent race condition
+                setRevealed(false);
+                setFeedbackMessage(null);
+
+                if (currentIndex < quiz.length - 1) {
+                  const nextIndex = currentIndex + 1;
+                  console.log('[QUIZ] ⏩ Skipping to question:', nextIndex);
+                  setCurrentIndex(nextIndex);
+
+                  // Auto-play audio for next question in audio mode
+                  if (quizMode === 'audio') {
+                    setTimeout(() => {
+                      speakChinese(quiz[nextIndex].word);
+                    }, 300);
+                  }
+                } else {
+                  // End of current batch - load more questions
+                  const hasMore = await loadNextBatch();
+                  if (hasMore) {
+                    // Continue to next question (revealed already reset above)
+                    const nextIndex = currentIndex + 1;
+                    setCurrentIndex(nextIndex);
+
+                    // Auto-play audio for next question in audio mode
+                    if (quizMode === 'audio') {
+                      setTimeout(() => {
+                        speakChinese(quiz[nextIndex].word);
+                      }, 300);
+                    }
+                  } else {
+                    // No more items available, finish quiz
+                    finishQuiz(score);
+                  }
+                }
+              };
+              skipToNext();
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.feedbackTitle}>{feedbackMessage.quality}</Text>
+            <View style={styles.feedbackDetails}>
+              <Text style={styles.feedbackText}>
+                Next review: <Text style={styles.feedbackValue}>{feedbackMessage.nextReview}</Text>
+              </Text>
+              <Text style={styles.feedbackText}>
+                Interval: <Text style={styles.feedbackValue}>{feedbackMessage.interval} {feedbackMessage.interval === 1 ? 'day' : 'days'}</Text>
+              </Text>
+              <Text style={styles.feedbackText}>
+                Score: <Text style={styles.feedbackValue}>{feedbackMessage.score}/5</Text>
+              </Text>
+            </View>
+            <Text style={styles.tapToSkipHint}>Tap to continue →</Text>
+          </TouchableOpacity>
+        ) : !revealed ? (
+          <>
+            {console.log('[QUIZ] ✅ RENDERING REVEAL BUTTON - revealed:', revealed, 'feedbackMessage:', feedbackMessage)}
+            <TouchableOpacity
+              style={[styles.quizButton, styles.revealButton]}
+              onPress={revealAnswer}
+            >
+              <Text style={styles.quizButtonText}>👁️ Reveal Answer</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            {console.log('[QUIZ] ⭐ RENDERING QUALITY BUTTONS - revealed:', revealed, 'feedbackMessage:', feedbackMessage)}
+            <View style={styles.qualityRatingContainer}>
+              <View style={styles.qualityButtonsRow}>
+              <TouchableOpacity
+                style={[styles.qualityButtonCompact, styles.quality0]}
+                onPress={() => markQuality(0)}
+              >
+                <Text style={styles.qualityEmoji}>😵</Text>
+                <Text style={styles.qualityText}>Forgot</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.qualityButtonCompact, styles.quality2]}
+                onPress={() => markQuality(2)}
+              >
+                <Text style={styles.qualityEmoji}>😕</Text>
+                <Text style={styles.qualityText}>Hard</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.qualityButtonCompact, styles.quality4]}
+                onPress={() => markQuality(4)}
+              >
+                <Text style={styles.qualityEmoji}>🙂</Text>
+                <Text style={styles.qualityText}>Good</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.qualityButtonCompact, styles.quality5]}
+                onPress={() => markQuality(5)}
+              >
+                <Text style={styles.qualityEmoji}>😄</Text>
+                <Text style={styles.qualityText}>Perfect</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      ) : !revealed ? (
-        <TouchableOpacity
-          style={[styles.quizButton, styles.revealButton]}
-          onPress={revealAnswer}
-        >
-          <Text style={styles.quizButtonText}>👁️ Reveal Answer</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.qualityRatingContainer}>
-          <Text style={styles.qualityLabel}>How well did you know it?</Text>
-          <View style={styles.qualityButtons}>
-            {/* Failed - Quality 0-2 */}
-            <TouchableOpacity
-              style={[styles.qualityButton, styles.quality0]}
-              onPress={() => markQuality(0)}
-            >
-              <Text style={styles.qualityButtonText}>😵</Text>
-              <Text style={styles.qualityButtonLabel}>Forgot</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.qualityButton, styles.quality1]}
-              onPress={() => markQuality(1)}
-            >
-              <Text style={styles.qualityButtonText}>😓</Text>
-              <Text style={styles.qualityButtonLabel}>Very Hard</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.qualityButton, styles.quality2]}
-              onPress={() => markQuality(2)}
-            >
-              <Text style={styles.qualityButtonText}>😕</Text>
-              <Text style={styles.qualityButtonLabel}>Hard</Text>
-            </TouchableOpacity>
-
-            {/* Passed - Quality 3-5 */}
-            <TouchableOpacity
-              style={[styles.qualityButton, styles.quality3]}
-              onPress={() => markQuality(3)}
-            >
-              <Text style={styles.qualityButtonText}>😐</Text>
-              <Text style={styles.qualityButtonLabel}>Okay</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.qualityButton, styles.quality4]}
-              onPress={() => markQuality(4)}
-            >
-              <Text style={styles.qualityButtonText}>🙂</Text>
-              <Text style={styles.qualityButtonLabel}>Good</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.qualityButton, styles.quality5]}
-              onPress={() => markQuality(5)}
-            >
-              <Text style={styles.qualityButtonText}>😄</Text>
-              <Text style={styles.qualityButtonLabel}>Perfect!</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-      </ScrollView>
-    </View>
+          </>
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#fff',
+  },
+  compactHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  quitButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  scrollContent: {
+  quitButtonText: {
+    fontSize: 18,
+    color: '#666',
+  },
+  questionNumber: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  scoreText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#667eea',
+  },
+  modeBadge: {
+    fontSize: 20,
+  },
+  contentArea: {
     flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
-  scrollContentContainer: {
-    flexGrow: 1,
-    paddingBottom: 20,
+  bottomActionsContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingBottom: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    backgroundColor: '#fff',
   },
   header: {
     backgroundColor: '#667eea',
@@ -918,13 +1158,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   quizCard: {
-    backgroundColor: '#fff',
-    margin: 20,
-    padding: 30,
-    borderRadius: 12,
     alignItems: 'center',
-    minHeight: 150,
     justifyContent: 'center',
+    paddingVertical: 20,
   },
   wordWithSpeaker: {
     flexDirection: 'row',
@@ -933,10 +1169,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   quizWord: {
-    fontSize: 48,
+    fontSize: 40,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   speakerButton: {
     padding: 8,
@@ -946,13 +1182,13 @@ const styles = StyleSheet.create({
     fontSize: 32,
   },
   quizPinyin: {
-    fontSize: 20,
+    fontSize: 18,
     color: '#667eea',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   meaningContainer: {
     width: '100%',
-    marginTop: 20,
+    marginTop: 12,
     padding: 16,
     backgroundColor: '#f5f5f5',
     borderRadius: 8,
@@ -981,6 +1217,8 @@ const styles = StyleSheet.create({
   },
   revealButton: {
     backgroundColor: '#667eea',
+    paddingVertical: 16,
+    borderRadius: 12,
   },
   correctButton: {
     backgroundColor: '#4caf50',
@@ -994,40 +1232,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   qualityRatingContainer: {
-    padding: 20,
-    backgroundColor: '#fff',
-    margin: 20,
-    marginTop: 0,
-    borderRadius: 12,
+    width: '100%',
   },
-  qualityLabel: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  qualityButtons: {
+  qualityButtonsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 12,
+    gap: 8,
   },
-  qualityButton: {
-    width: '30%',
-    minWidth: 100,
-    padding: 12,
+  qualityButtonCompact: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#e0e0e0',
   },
-  qualityButtonText: {
-    fontSize: 32,
+  qualityEmoji: {
+    fontSize: 24,
     marginBottom: 4,
   },
-  qualityButtonLabel: {
-    fontSize: 12,
+  qualityText: {
+    fontSize: 11,
     fontWeight: '600',
     color: '#666',
   },
@@ -1056,33 +1281,38 @@ const styles = StyleSheet.create({
     borderColor: '#4caf50',
   },
   feedbackContainer: {
-    backgroundColor: '#fff',
-    margin: 20,
-    marginTop: 0,
-    padding: 24,
+    backgroundColor: '#f0f4ff',
+    padding: 16,
     borderRadius: 12,
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#667eea',
   },
   feedbackTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#667eea',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   feedbackDetails: {
-    width: '100%',
-    gap: 8,
+    flexDirection: 'row',
+    gap: 16,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
   feedbackText: {
-    fontSize: 16,
+    fontSize: 13,
     color: '#666',
-    textAlign: 'center',
   },
   feedbackValue: {
     fontWeight: 'bold',
     color: '#333',
+  },
+  tapToSkipHint: {
+    fontSize: 12,
+    color: '#667eea',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   audioPrompt: {
     alignItems: 'center',

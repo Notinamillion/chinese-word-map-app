@@ -212,15 +212,6 @@ export default function App() {
           />
 
           <Tab.Screen
-            name="Sentences"
-            component={SentencesPlaceholder}
-            options={{
-              tabBarLabel: 'Sentences',
-              tabBarIcon: ({ color }) => <Text style={{ fontSize: 24 }}>📚</Text>,
-            }}
-          />
-
-          <Tab.Screen
             name="Profile"
             options={{
               tabBarLabel: 'Profile',
@@ -236,24 +227,6 @@ export default function App() {
 }
 
 // Placeholder components (to be implemented)
-function QuizPlaceholder() {
-  return (
-    <View style={styles.centered}>
-      <Text style={styles.placeholderText}>📝 Quiz Screen</Text>
-      <Text style={styles.placeholderSubtext}>Coming soon...</Text>
-    </View>
-  );
-}
-
-function SentencesPlaceholder() {
-  return (
-    <View style={styles.centered}>
-      <Text style={styles.placeholderText}>📚 Sentences Screen</Text>
-      <Text style={styles.placeholderSubtext}>Coming soon...</Text>
-    </View>
-  );
-}
-
 function ProfilePlaceholder({ onLogout }) {
   return (
     <View style={styles.centered}>
