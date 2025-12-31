@@ -1180,10 +1180,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 8,
-    backgroundColor: '#ffffcc', // Temporary: yellow background to make text visible
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
   },
   speakerButton: {
     padding: 8,
