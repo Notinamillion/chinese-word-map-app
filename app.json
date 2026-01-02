@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "ZhongMap",
-    "slug": "zhongmap",
+    "slug": "chinesewordappmap",
     "version": "1.5.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
