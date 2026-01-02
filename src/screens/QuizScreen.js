@@ -268,23 +268,24 @@ export default function QuizScreen() {
 
   const startWordQuiz = async (mode = 'words') => {
     try {
-      // Try to get fresh progress from server first
+      // ALWAYS use local cache first (local is source of truth)
       let progressData = null;
-      try {
-        const result = await api.getProgress();
-        console.log('[QUIZ] Server response:', result);
-        // Server returns progress object directly, not wrapped in {success: true, progress: {...}}
-        if (result && typeof result === 'object') {
-          progressData = result;
-          await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
-          console.log('[QUIZ] Loaded progress from server');
-        }
-      } catch (error) {
-        console.log('[QUIZ] Server error:', error.message);
-        const cachedProgress = await AsyncStorage.getItem('@progress');
-        if (cachedProgress) {
-          progressData = JSON.parse(cachedProgress);
-          console.log('[QUIZ] Using cached progress');
+      const cachedProgress = await AsyncStorage.getItem('@progress');
+      if (cachedProgress) {
+        progressData = JSON.parse(cachedProgress);
+        console.log('[QUIZ] Loaded from local cache');
+      } else {
+        // Only fetch from server if no local data
+        try {
+          const result = await api.getProgress();
+          console.log('[QUIZ] Server response:', result);
+          if (result && typeof result === 'object') {
+            progressData = result;
+            await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
+            console.log('[QUIZ] Loaded from server (no local cache)');
+          }
+        } catch (error) {
+          console.log('[QUIZ] Server error and no cache:', error.message);
         }
       }
 
