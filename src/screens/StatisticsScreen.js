@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
+import syncManager from '../services/syncManager';
 import { COLORS } from '../theme/colors';
 
 export default function StatisticsScreen() {
@@ -16,6 +17,7 @@ export default function StatisticsScreen() {
   const [stats, setStats] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('overview'); // overview | activity | words
+  const [syncStatus, setSyncStatus] = useState('loading'); // loading | synced | pending | error
 
   useEffect(() => {
     loadStatistics();
@@ -29,6 +31,21 @@ export default function StatisticsScreen() {
       if (cachedProgress) {
         data = JSON.parse(cachedProgress);
         console.log('[STATS] Loaded from local cache');
+
+        // Check sync status
+        const queueSize = syncManager.getQueueSize();
+        const isOnline = syncManager.getOnlineStatus();
+
+        if (queueSize > 0) {
+          setSyncStatus('pending'); // Has unsyncedchanges
+          console.log('[STATS] Sync pending:', queueSize, 'actions in queue');
+        } else if (isOnline) {
+          setSyncStatus('synced'); // All synced
+          console.log('[STATS] All synced');
+        } else {
+          setSyncStatus('offline'); // Offline but no pending changes
+          console.log('[STATS] Offline');
+        }
       } else {
         // Only fetch from server if no local data
         try {
@@ -36,9 +53,11 @@ export default function StatisticsScreen() {
           if (result && typeof result === 'object') {
             data = result;
             await AsyncStorage.setItem('@progress', JSON.stringify(data));
+            setSyncStatus('synced');
             console.log('[STATS] Loaded from server (no local cache)');
           }
         } catch (error) {
+          setSyncStatus('error');
           console.log('[STATS] Server error and no cache:', error.message);
         }
       }
@@ -237,6 +256,27 @@ export default function StatisticsScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>📊 Statistics</Text>
         <Text style={styles.subtitle}>Track your learning progress</Text>
+        {/* Sync Status Indicator */}
+        {syncStatus === 'pending' && (
+          <View style={styles.syncBadge}>
+            <Text style={styles.syncText}>⏳ Sync pending</Text>
+          </View>
+        )}
+        {syncStatus === 'synced' && (
+          <View style={[styles.syncBadge, styles.syncBadgeSynced]}>
+            <Text style={[styles.syncText, styles.syncTextSynced]}>✓ Synced</Text>
+          </View>
+        )}
+        {syncStatus === 'offline' && (
+          <View style={[styles.syncBadge, styles.syncBadgeOffline]}>
+            <Text style={styles.syncText}>📡 Offline</Text>
+          </View>
+        )}
+        {syncStatus === 'error' && (
+          <View style={[styles.syncBadge, styles.syncBadgeError]}>
+            <Text style={styles.syncText}>⚠️ Sync error</Text>
+          </View>
+        )}
       </View>
 
       {/* Summary Cards */}
@@ -868,5 +908,30 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     paddingTop: 12,
+  },
+  syncBadge: {
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: COLORS.primaryYellow,
+    alignSelf: 'center',
+  },
+  syncBadgeSynced: {
+    backgroundColor: COLORS.success,
+  },
+  syncBadgeOffline: {
+    backgroundColor: COLORS.textMedium,
+  },
+  syncBadgeError: {
+    backgroundColor: COLORS.error,
+  },
+  syncText: {
+    fontSize: 12,
+    color: COLORS.white,
+    fontWeight: '600',
+  },
+  syncTextSynced: {
+    color: COLORS.white,
   },
 });
