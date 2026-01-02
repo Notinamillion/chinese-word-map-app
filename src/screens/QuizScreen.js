@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -186,7 +186,7 @@ export default function QuizScreen() {
   const [quizStartTime, setQuizStartTime] = useState(null); // Track time for quality suggestion
   const [feedbackMessage, setFeedbackMessage] = useState(null); // Show feedback after rating
   const [dueCount, setDueCount] = useState(0); // Count of due review cards
-  const [answeredInSession, setAnsweredInSession] = useState(new Set()); // Track recently answered words
+  const answeredInSessionRef = useRef(new Set()); // Track recently answered words (using ref for sync updates)
 
   useEffect(() => {
     loadCharacters();
@@ -425,7 +425,7 @@ export default function QuizScreen() {
       setCurrentIndex(0);
       setRevealed(false);
       setScore({ correct: 0, total: 0 });
-      setAnsweredInSession(new Set()); // Reset answered tracking for new session
+      answeredInSessionRef.current = new Set(); // Reset answered tracking for new session
 
       // For audio quiz, auto-play the first word
       if (mode === 'audio' && selectedItems.length > 0) {
@@ -522,8 +522,9 @@ export default function QuizScreen() {
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
       console.log('[QUIZ] Saved result for', currentWord, `(${itemType})`, '- correct:', isCorrect);
 
-      // Track this word as answered in current session
-      setAnsweredInSession(prev => new Set([...prev, currentWord]));
+      // Track this word as answered in current session (using ref for immediate sync update)
+      answeredInSessionRef.current.add(currentWord);
+      console.log('[QUIZ] 📝 Added to answered set:', currentWord, '- Set size:', answeredInSessionRef.current.size);
 
       // Auto-save session statistics every 10 questions
       if (newScore.total > 0 && newScore.total % 10 === 0) {
@@ -565,7 +566,7 @@ export default function QuizScreen() {
 
           // Find next unanswered question in the quiz array
           let nextIndex = currentIndex + 1;
-          while (nextIndex < quiz.length && answeredInSession.has(quiz[nextIndex].word)) {
+          while (nextIndex < quiz.length && answeredInSessionRef.current.has(quiz[nextIndex].word)) {
             console.log('[QUIZ] ⏩ Skipping already answered:', quiz[nextIndex].word);
             nextIndex++;
           }
@@ -586,7 +587,7 @@ export default function QuizScreen() {
             if (hasMore) {
               // Find first unanswered in new batch
               nextIndex = currentIndex + 1;
-              while (nextIndex < quiz.length && answeredInSession.has(quiz[nextIndex].word)) {
+              while (nextIndex < quiz.length && answeredInSessionRef.current.has(quiz[nextIndex].word)) {
                 nextIndex++;
               }
 
@@ -683,7 +684,7 @@ export default function QuizScreen() {
       const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
       const eligibleItems = availableItems.filter(item => {
         // Exclude words answered in current session
-        if (answeredInSession.has(item.word)) {
+        if (answeredInSessionRef.current.has(item.word)) {
           return false;
         }
         // Exclude words reviewed in last 30 minutes
@@ -696,7 +697,7 @@ export default function QuizScreen() {
       console.log('[QUIZ] Filtering:', {
         total: quizItems.length,
         available: availableItems.length,
-        answeredInSession: answeredInSession.size,
+        answeredInSession: answeredInSessionRef.current.size,
         eligible: eligibleItems.length
       });
 
@@ -1070,7 +1071,7 @@ export default function QuizScreen() {
 
                 // Find next unanswered question in the quiz array
                 let nextIndex = currentIndex + 1;
-                while (nextIndex < quiz.length && answeredInSession.has(quiz[nextIndex].word)) {
+                while (nextIndex < quiz.length && answeredInSessionRef.current.has(quiz[nextIndex].word)) {
                   console.log('[QUIZ] ⏩ Skipping already answered:', quiz[nextIndex].word);
                   nextIndex++;
                 }
@@ -1091,7 +1092,7 @@ export default function QuizScreen() {
                   if (hasMore) {
                     // Find first unanswered in new batch
                     nextIndex = currentIndex + 1;
-                    while (nextIndex < quiz.length && answeredInSession.has(quiz[nextIndex].word)) {
+                    while (nextIndex < quiz.length && answeredInSessionRef.current.has(quiz[nextIndex].word)) {
                       nextIndex++;
                     }
 
