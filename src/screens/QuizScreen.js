@@ -74,6 +74,7 @@ async function saveSessionStatistics(currentScore, isComplete = false) {
           firstQuizDate: null,
         },
         currentSession: null,
+        lastSavedQuestionCount: 0, // Track how many questions we've already counted
       }
     };
 
@@ -84,6 +85,17 @@ async function saveSessionStatistics(currentScore, isComplete = false) {
 
     const session = progressData.statistics.currentSession;
     const now = Date.now();
+
+    // Calculate NEW questions since last save (not total)
+    const lastSavedCount = progressData.statistics.lastSavedQuestionCount || 0;
+    const newQuestions = currentScore.total - lastSavedCount;
+
+    console.log('[QUIZ] 📊 Stats calculation:', {
+      totalQuestions: currentScore.total,
+      lastSaved: lastSavedCount,
+      newQuestions: newQuestions,
+      isComplete
+    });
 
     // Update session with current stats
     session.endTime = now;
@@ -111,19 +123,24 @@ async function saveSessionStatistics(currentScore, isComplete = false) {
       dayStats.sessionsCount++;
     }
 
-    dayStats.itemsReviewed = (dayStats.itemsReviewed || 0) + currentScore.total;
+    // ONLY add the NEW questions (not the total)
+    dayStats.itemsReviewed = (dayStats.itemsReviewed || 0) + newQuestions;
     dayStats.timeSpent = (dayStats.timeSpent || 0) + session.duration;
 
-    // Update accuracy (weighted average)
-    const totalReviews = dayStats.itemsReviewed;
-    if (totalReviews > 0) {
+    // Update accuracy (weighted average based on NEW questions)
+    if (newQuestions > 0) {
+      const previousTotal = (dayStats.itemsReviewed || 0) - newQuestions;
+      const totalReviews = dayStats.itemsReviewed;
       dayStats.accuracy =
-        ((dayStats.accuracy * (totalReviews - currentScore.total)) +
-          (session.accuracy * currentScore.total)) /
+        ((dayStats.accuracy * previousTotal) +
+          (session.accuracy * newQuestions)) /
         totalReviews;
     }
 
-    // Update milestones
+    // Update milestones (only add new questions)
+    progressData.statistics.milestones.totalReviews =
+      (progressData.statistics.milestones.totalReviews || 0) + newQuestions;
+
     if (isComplete) {
       progressData.statistics.milestones.totalSessions++;
 
@@ -132,10 +149,11 @@ async function saveSessionStatistics(currentScore, isComplete = false) {
 
       // Clear current session
       progressData.statistics.currentSession = null;
+      progressData.statistics.lastSavedQuestionCount = 0;
+    } else {
+      // Update last saved count for next incremental save
+      progressData.statistics.lastSavedQuestionCount = currentScore.total;
     }
-
-    progressData.statistics.milestones.totalReviews =
-      (progressData.statistics.milestones.totalReviews || 0) + currentScore.total;
 
     if (!progressData.statistics.milestones.firstQuizDate) {
       progressData.statistics.milestones.firstQuizDate = now;
@@ -146,8 +164,8 @@ async function saveSessionStatistics(currentScore, isComplete = false) {
 
     await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
     console.log('[QUIZ] ✅ Saved session statistics:', {
-      questions: currentScore.total,
-      correct: currentScore.correct,
+      newQuestions,
+      totalToday: dayStats.itemsReviewed,
       isComplete,
     });
 
@@ -168,6 +186,7 @@ export default function QuizScreen() {
   const [quizStartTime, setQuizStartTime] = useState(null); // Track time for quality suggestion
   const [feedbackMessage, setFeedbackMessage] = useState(null); // Show feedback after rating
   const [dueCount, setDueCount] = useState(0); // Count of due review cards
+  const [answeredInSession, setAnsweredInSession] = useState(new Set()); // Track recently answered words
 
   useEffect(() => {
     loadCharacters();
@@ -406,6 +425,7 @@ export default function QuizScreen() {
       setCurrentIndex(0);
       setRevealed(false);
       setScore({ correct: 0, total: 0 });
+      setAnsweredInSession(new Set()); // Reset answered tracking for new session
 
       // For audio quiz, auto-play the first word
       if (mode === 'audio' && selectedItems.length > 0) {
@@ -501,6 +521,9 @@ export default function QuizScreen() {
 
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
       console.log('[QUIZ] Saved result for', currentWord, `(${itemType})`, '- correct:', isCorrect);
+
+      // Track this word as answered in current session
+      setAnsweredInSession(prev => new Set([...prev, currentWord]));
 
       // Auto-save session statistics every 10 questions
       if (newScore.total > 0 && newScore.total % 10 === 0) {
@@ -641,13 +664,25 @@ export default function QuizScreen() {
       const currentWords = quiz.map(item => item.word);
       const availableItems = quizItems.filter(item => !currentWords.includes(item.word));
 
-      // Filter out recently reviewed (last 30 minutes)
+      // Filter out recently answered in this session AND recently reviewed (last 30 minutes)
       const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
       const eligibleItems = availableItems.filter(item => {
+        // Exclude words answered in current session
+        if (answeredInSession.has(item.word)) {
+          return false;
+        }
+        // Exclude words reviewed in last 30 minutes
         if (!item.quizData || !item.quizData.lastReviewed) {
           return true;
         }
         return item.quizData.lastReviewed < thirtyMinutesAgo;
+      });
+
+      console.log('[QUIZ] Filtering:', {
+        total: quizItems.length,
+        available: availableItems.length,
+        answeredInSession: answeredInSession.size,
+        eligible: eligibleItems.length
       });
 
       const itemsToQuiz = eligibleItems.length >= 10 ? eligibleItems : availableItems;
