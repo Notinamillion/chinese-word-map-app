@@ -678,14 +678,14 @@ export default function QuizScreen() {
 
       // IMPORTANT: Filter in correct order to prevent same questions appearing
       // 1. First filter out answered questions (most restrictive)
-      const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
+      const twoMinutesAgo = Date.now() - (2 * 60 * 1000); // Reduced from 30min to 2min
       const unansweredItems = quizItems.filter(item => {
         // Exclude words answered in current session
         if (answeredInSessionRef.current.has(item.word)) {
           return false;
         }
-        // Exclude words reviewed in last 30 minutes
-        if (item.quizData && item.quizData.lastReviewed && item.quizData.lastReviewed >= thirtyMinutesAgo) {
+        // Exclude words reviewed in last 2 minutes (prevent immediate repetition)
+        if (item.quizData && item.quizData.lastReviewed && item.quizData.lastReviewed >= twoMinutesAgo) {
           return false;
         }
         return true;
@@ -715,6 +715,11 @@ export default function QuizScreen() {
       const nextBatch = prioritized.slice(0, Math.min(batchSize, prioritized.length));
 
       console.log('[QUIZ] Loaded', nextBatch.length, 'new questions');
+
+      // Clear answered session tracker when loading new batch
+      // This allows words to be quizzed again in future batches
+      answeredInSessionRef.current.clear();
+      console.log('[QUIZ] 🔄 Cleared answered session tracker for new batch');
 
       // Append to current quiz
       setQuiz(prev => [...prev, ...nextBatch]);
