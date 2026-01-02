@@ -12,7 +12,10 @@
       "Bash(taskkill //F //PID 119408)",
       "Bash(npm install:*)",
       "Bash(dir:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(set EAS_LOCAL_BUILD_SKIP_CLEANUP=1)",
+      "Bash(set TMPDIR=C:Userss.batemantemp)",
+      "Bash(eas build:*)"
     ]
   }
 }
