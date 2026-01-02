@@ -677,30 +677,27 @@ export default function QuizScreen() {
       }
 
       // IMPORTANT: Filter in correct order to prevent same questions appearing
-      // 1. First filter out answered questions (most restrictive)
-      const twoMinutesAgo = Date.now() - (2 * 60 * 1000); // Reduced from 30min to 2min
-      const unansweredItems = quizItems.filter(item => {
-        // Exclude words answered in current session
-        if (answeredInSessionRef.current.has(item.word)) {
-          return false;
-        }
-        // Exclude words reviewed in last 2 minutes (prevent immediate repetition)
-        if (item.quizData && item.quizData.lastReviewed && item.quizData.lastReviewed >= twoMinutesAgo) {
+      // 1. Filter out recently reviewed words (time-based)
+      const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
+      const unrecentlyReviewedItems = quizItems.filter(item => {
+        // Exclude words reviewed in last 10 minutes (prevents immediate repetition)
+        // This allows cycling through all known words without seeing same ones too quickly
+        if (item.quizData && item.quizData.lastReviewed && item.quizData.lastReviewed >= tenMinutesAgo) {
           return false;
         }
         return true;
       });
 
-      // 2. Then filter out items already in current quiz array (less restrictive fallback)
+      // 2. Then filter out items already in current quiz array
       const currentWords = quiz.map(item => item.word);
-      const eligibleItems = unansweredItems.filter(item => !currentWords.includes(item.word));
+      const eligibleItems = unrecentlyReviewedItems.filter(item => !currentWords.includes(item.word));
 
       console.log('[QUIZ] Filtering:', {
         total: quizItems.length,
-        unanswered: unansweredItems.length,
-        answeredInSession: answeredInSessionRef.current.size,
+        unrecentlyReviewed: unrecentlyReviewedItems.length,
         eligible: eligibleItems.length,
-        currentQuizSize: quiz.length
+        currentQuizSize: quiz.length,
+        tenMinCutoff: new Date(tenMinutesAgo).toLocaleTimeString()
       });
 
       // ALWAYS use eligibleItems (never show words already in quiz)
@@ -716,10 +713,9 @@ export default function QuizScreen() {
 
       console.log('[QUIZ] Loaded', nextBatch.length, 'new questions');
 
-      // Clear answered session tracker when loading new batch
-      // This allows words to be quizzed again in future batches
-      answeredInSessionRef.current.clear();
-      console.log('[QUIZ] 🔄 Cleared answered session tracker for new batch');
+      // DON'T clear answeredInSessionRef here - keep tracking across batches
+      // This prevents words from repeating within the same quiz session
+      // answeredInSessionRef is only cleared when starting a completely new session
 
       // Append to current quiz
       setQuiz(prev => [...prev, ...nextBatch]);
