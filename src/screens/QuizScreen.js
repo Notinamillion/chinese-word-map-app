@@ -563,8 +563,14 @@ export default function QuizScreen() {
           // Clear feedback (revealed was already reset when marking quality)
           setFeedbackMessage(null);
 
-          if (currentIndex < quiz.length - 1) {
-            const nextIndex = currentIndex + 1;
+          // Find next unanswered question in the quiz array
+          let nextIndex = currentIndex + 1;
+          while (nextIndex < quiz.length && answeredInSession.has(quiz[nextIndex].word)) {
+            console.log('[QUIZ] ⏩ Skipping already answered:', quiz[nextIndex].word);
+            nextIndex++;
+          }
+
+          if (nextIndex < quiz.length) {
             console.log('[QUIZ] ⏭️ Moving to next question:', nextIndex);
             setCurrentIndex(nextIndex);
 
@@ -578,17 +584,26 @@ export default function QuizScreen() {
             // End of current batch - load more questions
             const hasMore = await loadNextBatch();
             if (hasMore) {
-              // Continue to next question
-              const nextIndex = currentIndex + 1;
-              // IMPORTANT: Reset revealed BEFORE changing index
-              setRevealed(false);
-              setCurrentIndex(nextIndex);
+              // Find first unanswered in new batch
+              nextIndex = currentIndex + 1;
+              while (nextIndex < quiz.length && answeredInSession.has(quiz[nextIndex].word)) {
+                nextIndex++;
+              }
 
-              // Auto-play audio for next question in audio mode
-              if (quizMode === 'audio') {
-                setTimeout(() => {
-                  speakChinese(quiz[nextIndex].word);
-                }, 300);
+              if (nextIndex < quiz.length) {
+                // IMPORTANT: Reset revealed BEFORE changing index
+                setRevealed(false);
+                setCurrentIndex(nextIndex);
+
+                // Auto-play audio for next question in audio mode
+                if (quizMode === 'audio') {
+                  setTimeout(() => {
+                    speakChinese(quiz[nextIndex].word);
+                  }, 300);
+                }
+              } else {
+                // No unanswered items available
+                finishQuiz(newScore);
               }
             } else {
               // No more items available, finish quiz
@@ -1053,8 +1068,14 @@ export default function QuizScreen() {
                 setRevealed(false);
                 setFeedbackMessage(null);
 
-                if (currentIndex < quiz.length - 1) {
-                  const nextIndex = currentIndex + 1;
+                // Find next unanswered question in the quiz array
+                let nextIndex = currentIndex + 1;
+                while (nextIndex < quiz.length && answeredInSession.has(quiz[nextIndex].word)) {
+                  console.log('[QUIZ] ⏩ Skipping already answered:', quiz[nextIndex].word);
+                  nextIndex++;
+                }
+
+                if (nextIndex < quiz.length) {
                   console.log('[QUIZ] ⏩ Skipping to question:', nextIndex);
                   setCurrentIndex(nextIndex);
 
@@ -1068,15 +1089,24 @@ export default function QuizScreen() {
                   // End of current batch - load more questions
                   const hasMore = await loadNextBatch();
                   if (hasMore) {
-                    // Continue to next question (revealed already reset above)
-                    const nextIndex = currentIndex + 1;
-                    setCurrentIndex(nextIndex);
+                    // Find first unanswered in new batch
+                    nextIndex = currentIndex + 1;
+                    while (nextIndex < quiz.length && answeredInSession.has(quiz[nextIndex].word)) {
+                      nextIndex++;
+                    }
 
-                    // Auto-play audio for next question in audio mode
-                    if (quizMode === 'audio') {
-                      setTimeout(() => {
-                        speakChinese(quiz[nextIndex].word);
-                      }, 300);
+                    if (nextIndex < quiz.length) {
+                      setCurrentIndex(nextIndex);
+
+                      // Auto-play audio for next question in audio mode
+                      if (quizMode === 'audio') {
+                        setTimeout(() => {
+                          speakChinese(quiz[nextIndex].word);
+                        }, 300);
+                      }
+                    } else {
+                      // No unanswered items available
+                      finishQuiz(score);
                     }
                   } else {
                     // No more items available, finish quiz
