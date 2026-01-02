@@ -699,20 +699,18 @@ export default function QuizScreen() {
         total: quizItems.length,
         unanswered: unansweredItems.length,
         answeredInSession: answeredInSessionRef.current.size,
-        notInQuiz: eligibleItems.length,
+        eligible: eligibleItems.length,
         currentQuizSize: quiz.length
       });
 
-      // If we have enough eligible items, use them. Otherwise, fall back to unanswered items
-      const itemsToQuiz = eligibleItems.length >= 10 ? eligibleItems : unansweredItems;
-
-      if (itemsToQuiz.length === 0) {
-        console.log('[QUIZ] No more items available');
+      // ALWAYS use eligibleItems (never show words already in quiz)
+      if (eligibleItems.length === 0) {
+        console.log('[QUIZ] No more eligible items available');
         return false;
       }
 
       // Prioritize and select next batch
-      const prioritized = prioritizeQuizItems(itemsToQuiz);
+      const prioritized = prioritizeQuizItems(eligibleItems);
       const batchSize = 10;
       const nextBatch = prioritized.slice(0, Math.min(batchSize, prioritized.length));
 
