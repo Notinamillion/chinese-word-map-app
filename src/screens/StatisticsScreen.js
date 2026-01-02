@@ -23,19 +23,23 @@ export default function StatisticsScreen() {
 
   const loadStatistics = async () => {
     try {
-      // Try to get fresh progress from server
+      // ALWAYS use cached data first (local is source of truth)
       let data = null;
-      try {
-        const result = await api.getProgress();
-        if (result && typeof result === 'object') {
-          data = result;
-          await AsyncStorage.setItem('@progress', JSON.stringify(data));
-        }
-      } catch (error) {
-        console.log('[STATS] Server error, using cached data:', error.message);
-        const cachedProgress = await AsyncStorage.getItem('@progress');
-        if (cachedProgress) {
-          data = JSON.parse(cachedProgress);
+      const cachedProgress = await AsyncStorage.getItem('@progress');
+      if (cachedProgress) {
+        data = JSON.parse(cachedProgress);
+        console.log('[STATS] Loaded from local cache');
+      } else {
+        // Only fetch from server if no local data
+        try {
+          const result = await api.getProgress();
+          if (result && typeof result === 'object') {
+            data = result;
+            await AsyncStorage.setItem('@progress', JSON.stringify(data));
+            console.log('[STATS] Loaded from server (no local cache)');
+          }
+        } catch (error) {
+          console.log('[STATS] Server error and no cache:', error.message);
         }
       }
 
