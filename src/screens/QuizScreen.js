@@ -56,6 +56,108 @@ function updateStreak(progressData) {
   }
 }
 
+// Save session statistics (called periodically and on quit)
+async function saveSessionStatistics(currentScore, isComplete = false) {
+  try {
+    const cachedProgress = await AsyncStorage.getItem('@progress');
+    const progressData = cachedProgress ? JSON.parse(cachedProgress) : {
+      characterProgress: {},
+      compoundProgress: {},
+      statistics: {
+        quizSessions: [],
+        dailyStats: {},
+        milestones: {
+          totalSessions: 0,
+          totalReviews: 0,
+          currentStreak: 0,
+          longestStreak: 0,
+          firstQuizDate: null,
+        },
+        currentSession: null,
+      }
+    };
+
+    if (!progressData.statistics.currentSession) {
+      console.log('[QUIZ] No current session to save');
+      return;
+    }
+
+    const session = progressData.statistics.currentSession;
+    const now = Date.now();
+
+    // Update session with current stats
+    session.endTime = now;
+    session.duration = now - session.startTime;
+    session.correctCount = currentScore.correct;
+    session.totalItems = currentScore.total;
+    session.accuracy = currentScore.total > 0 ? currentScore.correct / currentScore.total : 0;
+
+    // Update daily stats
+    const dateStr = new Date().toISOString().split('T')[0];
+    if (!progressData.statistics.dailyStats[dateStr]) {
+      progressData.statistics.dailyStats[dateStr] = {
+        sessionsCount: 0,
+        itemsReviewed: 0,
+        newWordsLearned: 0,
+        accuracy: 0,
+        timeSpent: 0,
+      };
+    }
+
+    const dayStats = progressData.statistics.dailyStats[dateStr];
+
+    // If this is completion, increment session count
+    if (isComplete) {
+      dayStats.sessionsCount++;
+    }
+
+    dayStats.itemsReviewed = (dayStats.itemsReviewed || 0) + currentScore.total;
+    dayStats.timeSpent = (dayStats.timeSpent || 0) + session.duration;
+
+    // Update accuracy (weighted average)
+    const totalReviews = dayStats.itemsReviewed;
+    if (totalReviews > 0) {
+      dayStats.accuracy =
+        ((dayStats.accuracy * (totalReviews - currentScore.total)) +
+          (session.accuracy * currentScore.total)) /
+        totalReviews;
+    }
+
+    // Update milestones
+    if (isComplete) {
+      progressData.statistics.milestones.totalSessions++;
+
+      // Add to session history only on complete
+      progressData.statistics.quizSessions.push({ ...session });
+
+      // Clear current session
+      progressData.statistics.currentSession = null;
+    }
+
+    progressData.statistics.milestones.totalReviews =
+      (progressData.statistics.milestones.totalReviews || 0) + currentScore.total;
+
+    if (!progressData.statistics.milestones.firstQuizDate) {
+      progressData.statistics.milestones.firstQuizDate = now;
+    }
+
+    // Update streak
+    updateStreak(progressData);
+
+    await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
+    console.log('[QUIZ] ✅ Saved session statistics:', {
+      questions: currentScore.total,
+      correct: currentScore.correct,
+      isComplete,
+    });
+
+    return progressData;
+  } catch (error) {
+    console.error('[QUIZ] ❌ Error saving session statistics:', error);
+    throw error;
+  }
+}
+
 export default function QuizScreen() {
   const [quizMode, setQuizMode] = useState(null); // null | 'words' | 'sentences' | 'audio'
   const [quiz, setQuiz] = useState(null);
@@ -400,16 +502,17 @@ export default function QuizScreen() {
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
       console.log('[QUIZ] Saved result for', currentWord, `(${itemType})`, '- correct:', isCorrect);
 
-      // Show progress saved notification every 30 questions
-      if (newScore.total > 0 && newScore.total % 30 === 0) {
+      // Auto-save session statistics every 10 questions
+      if (newScore.total > 0 && newScore.total % 10 === 0) {
+        await saveSessionStatistics(newScore, false);
+
         if (Platform.OS === 'android') {
           ToastAndroid.show(
             `Progress saved! ${newScore.total} questions completed ✓`,
-            ToastAndroid.LONG
+            ToastAndroid.SHORT
           );
         } else {
-          // For iOS, we'll show it in the feedback message instead
-          console.log(`[QUIZ] Milestone: ${newScore.total} questions completed`);
+          console.log(`[QUIZ] Milestone: ${newScore.total} questions completed & saved`);
         }
       }
 
@@ -669,13 +772,28 @@ export default function QuizScreen() {
   };
 
 
-  const quitQuiz = () => {
+  const quitQuiz = async () => {
+    const handleQuit = async () => {
+      // Save session statistics before quitting
+      if (score.total > 0) {
+        try {
+          await saveSessionStatistics(score, false);
+          console.log('[QUIZ] Saved session statistics on quit');
+        } catch (error) {
+          console.error('[QUIZ] Error saving session statistics on quit:', error);
+        }
+      }
+      setQuizMode(null);
+    };
+
     Alert.alert(
       'Quit Quiz?',
-      `Your answers have been saved, but session statistics won't be recorded.`,
+      score.total > 0
+        ? `You've completed ${score.total} question${score.total === 1 ? '' : 's'}. Your progress and statistics will be saved.`
+        : 'Are you sure you want to quit?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Quit', onPress: () => setQuizMode(null), style: 'destructive' },
+        { text: 'Quit', onPress: handleQuit, style: 'destructive' },
       ]
     );
   };
