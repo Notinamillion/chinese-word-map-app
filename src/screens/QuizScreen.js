@@ -676,32 +676,35 @@ export default function QuizScreen() {
         });
       }
 
-      // Filter out items already in current quiz
-      const currentWords = quiz.map(item => item.word);
-      const availableItems = quizItems.filter(item => !currentWords.includes(item.word));
-
-      // Filter out recently answered in this session AND recently reviewed (last 30 minutes)
+      // IMPORTANT: Filter in correct order to prevent same questions appearing
+      // 1. First filter out answered questions (most restrictive)
       const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
-      const eligibleItems = availableItems.filter(item => {
+      const unansweredItems = quizItems.filter(item => {
         // Exclude words answered in current session
         if (answeredInSessionRef.current.has(item.word)) {
           return false;
         }
         // Exclude words reviewed in last 30 minutes
-        if (!item.quizData || !item.quizData.lastReviewed) {
-          return true;
+        if (item.quizData && item.quizData.lastReviewed && item.quizData.lastReviewed >= thirtyMinutesAgo) {
+          return false;
         }
-        return item.quizData.lastReviewed < thirtyMinutesAgo;
+        return true;
       });
+
+      // 2. Then filter out items already in current quiz array (less restrictive fallback)
+      const currentWords = quiz.map(item => item.word);
+      const eligibleItems = unansweredItems.filter(item => !currentWords.includes(item.word));
 
       console.log('[QUIZ] Filtering:', {
         total: quizItems.length,
-        available: availableItems.length,
+        unanswered: unansweredItems.length,
         answeredInSession: answeredInSessionRef.current.size,
-        eligible: eligibleItems.length
+        notInQuiz: eligibleItems.length,
+        currentQuizSize: quiz.length
       });
 
-      const itemsToQuiz = eligibleItems.length >= 10 ? eligibleItems : availableItems;
+      // If we have enough eligible items, use them. Otherwise, fall back to unanswered items
+      const itemsToQuiz = eligibleItems.length >= 10 ? eligibleItems : unansweredItems;
 
       if (itemsToQuiz.length === 0) {
         console.log('[QUIZ] No more items available');
