@@ -9,6 +9,8 @@ import {
   Animated,
   Vibration,
   Image,
+  ToastAndroid,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -330,6 +332,10 @@ export default function QuizScreen() {
 
   const markQuality = async (quality) => {
     console.log('[QUIZ] ⭐ Marking quality:', quality, 'at index:', currentIndex);
+
+    // IMPORTANT: Reset revealed immediately to prevent flicker
+    setRevealed(false);
+
     // Quality >= 3 is considered "correct"
     const isCorrect = quality >= 3;
     const newScore = {
@@ -394,6 +400,19 @@ export default function QuizScreen() {
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
       console.log('[QUIZ] Saved result for', currentWord, `(${itemType})`, '- correct:', isCorrect);
 
+      // Show progress saved notification every 30 questions
+      if (newScore.total > 0 && newScore.total % 30 === 0) {
+        if (Platform.OS === 'android') {
+          ToastAndroid.show(
+            `Progress saved! ${newScore.total} questions completed ✓`,
+            ToastAndroid.LONG
+          );
+        } else {
+          // For iOS, we'll show it in the feedback message instead
+          console.log(`[QUIZ] Milestone: ${newScore.total} questions completed`);
+        }
+      }
+
       // Show feedback with next review info
       const updatedData = itemType === 'character'
         ? progressData.characterProgress[currentWord].quizScore
@@ -413,10 +432,9 @@ export default function QuizScreen() {
       // Auto-advance after showing feedback
       setTimeout(() => {
         const advanceToNext = async () => {
-          console.log('[QUIZ] ⏭️ Auto-advancing - clearing feedback and resetting revealed');
+          console.log('[QUIZ] ⏭️ Auto-advancing - clearing feedback');
 
-          // IMPORTANT: Reset revealed BEFORE clearing feedback to prevent race condition
-          setRevealed(false);
+          // Clear feedback (revealed was already reset when marking quality)
           setFeedbackMessage(null);
 
           if (currentIndex < quiz.length - 1) {
@@ -520,13 +538,13 @@ export default function QuizScreen() {
       const currentWords = quiz.map(item => item.word);
       const availableItems = quizItems.filter(item => !currentWords.includes(item.word));
 
-      // Filter out recently reviewed (last 5 minutes)
-      const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+      // Filter out recently reviewed (last 30 minutes)
+      const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
       const eligibleItems = availableItems.filter(item => {
         if (!item.quizData || !item.quizData.lastReviewed) {
           return true;
         }
-        return item.quizData.lastReviewed < fiveMinutesAgo;
+        return item.quizData.lastReviewed < thirtyMinutesAgo;
       });
 
       const itemsToQuiz = eligibleItems.length >= 10 ? eligibleItems : availableItems;
@@ -654,7 +672,7 @@ export default function QuizScreen() {
   const quitQuiz = () => {
     Alert.alert(
       'Quit Quiz?',
-      'Your progress will not be saved.',
+      `Your answers have been saved, but session statistics won't be recorded.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Quit', onPress: () => setQuizMode(null), style: 'destructive' },
@@ -754,7 +772,7 @@ export default function QuizScreen() {
           <TouchableOpacity onPress={quitQuiz} style={styles.quitButton}>
             <Text style={styles.quitButtonText}>✕</Text>
           </TouchableOpacity>
-          <Text style={styles.questionNumber}>{currentIndex + 1}/{quiz.length}</Text>
+          <Text style={styles.questionNumber}>Question {score.total + 1}</Text>
         </View>
         <Image
           source={require('../../assets/logo-icon-only.png')}
