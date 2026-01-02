@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
 import api from '../services/api';
+import syncManager from '../services/syncManager';
 import COLORS from '../theme/colors';
 import {
   calculateNextReview,
@@ -167,6 +168,12 @@ async function saveSessionStatistics(currentScore, isComplete = false) {
       newQuestions,
       totalToday: dayStats.itemsReviewed,
       isComplete,
+    });
+
+    // Queue progress sync to server
+    await syncManager.queueAction({
+      type: 'SAVE_PROGRESS',
+      data: progressData
     });
 
     return progressData;
@@ -522,6 +529,12 @@ export default function QuizScreen() {
 
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
       console.log('[QUIZ] Saved result for', currentWord, `(${itemType})`, '- correct:', isCorrect);
+
+      // Queue progress sync to server
+      await syncManager.queueAction({
+        type: 'SAVE_PROGRESS',
+        data: progressData
+      });
 
       // Track this word as answered in current session (using ref for immediate sync update)
       answeredInSessionRef.current.add(currentWord);
