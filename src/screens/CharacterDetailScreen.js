@@ -6,15 +6,23 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Modal,
+  TextInput,
+  Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import syncManager from '../services/syncManager';
 import { COLORS } from '../theme/colors';
+import api from '../services/api';
 
-export default function CharacterDetailScreen({ route }) {
+export default function CharacterDetailScreen({ route, isAdmin }) {
   const { character } = route.params;
   const [charProgress, setCharProgress] = useState(0);
   const [compoundKnownList, setCompoundKnownList] = useState({});
+  const [customMeanings, setCustomMeanings] = useState(null);
+  const [customImage, setCustomImage] = useState(null);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editedMeanings, setEditedMeanings] = useState('');
 
   // DEBUG: Log what character data we received
   console.log('[DETAIL] Character data received:', {
@@ -30,7 +38,60 @@ export default function CharacterDetailScreen({ route }) {
 
   useEffect(() => {
     loadProgress();
+    loadCustomData();
   }, []);
+
+  const loadCustomData = async () => {
+    try {
+      // Load custom meanings and images from AsyncStorage
+      const customData = await AsyncStorage.getItem('@customCharacterData');
+      if (customData) {
+        const parsed = JSON.parse(customData);
+        const charData = parsed[character.char];
+        if (charData) {
+          setCustomMeanings(charData.meanings);
+          setCustomImage(charData.image);
+        }
+      }
+    } catch (error) {
+      console.error('[DETAIL] Error loading custom data:', error);
+    }
+  };
+
+  const handleEditMeanings = () => {
+    const currentMeanings = customMeanings || character.meanings || [];
+    setEditedMeanings(currentMeanings.join('\n'));
+    setEditModalVisible(true);
+  };
+
+  const handleSaveMeanings = async () => {
+    try {
+      const newMeanings = editedMeanings.split('\n').filter(m => m.trim());
+
+      // Save to AsyncStorage
+      const customData = await AsyncStorage.getItem('@customCharacterData');
+      const parsed = customData ? JSON.parse(customData) : {};
+
+      if (!parsed[character.char]) {
+        parsed[character.char] = {};
+      }
+      parsed[character.char].meanings = newMeanings;
+
+      await AsyncStorage.setItem('@customCharacterData', JSON.stringify(parsed));
+      setCustomMeanings(newMeanings);
+      setEditModalVisible(false);
+
+      // TODO: Sync to server
+      Alert.alert('Success', 'Meanings updated successfully');
+    } catch (error) {
+      console.error('[DETAIL] Error saving meanings:', error);
+      Alert.alert('Error', 'Failed to save meanings');
+    }
+  };
+
+  const handleAddImage = () => {
+    Alert.alert('Coming Soon', 'Image upload will be available soon. This will allow you to add memory aids for characters.');
+  };
 
   const loadProgress = async () => {
     try {
@@ -160,9 +221,18 @@ export default function CharacterDetailScreen({ route }) {
 
         {/* Meanings - directly below pinyin */}
         <View style={{ marginTop: 20, width: '100%' }}>
-          <Text style={[styles.sectionTitle, { fontSize: 20, color: COLORS.textDark, marginBottom: 10 }]}>Meanings</Text>
-          {character.meanings && character.meanings.length > 0 ? (
-            character.meanings.map((meaning, index) => (
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <Text style={[styles.sectionTitle, { fontSize: 20, color: COLORS.textDark }]}>
+              Meanings {customMeanings && '(Custom)'}
+            </Text>
+            {isAdmin && (
+              <TouchableOpacity onPress={handleEditMeanings} style={styles.editButton}>
+                <Text style={styles.editButtonText}>✏️ Edit</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {(customMeanings || character.meanings)?.length > 0 ? (
+            (customMeanings || character.meanings).map((meaning, index) => (
               <Text key={index} style={[styles.meaningText, { fontSize: 16, color: COLORS.textMedium }]}>
                 • {meaning}
               </Text>
@@ -170,8 +240,50 @@ export default function CharacterDetailScreen({ route }) {
           ) : (
             <Text style={{ fontSize: 14, color: COLORS.error }}>No meanings available</Text>
           )}
+          {isAdmin && (
+            <TouchableOpacity onPress={handleAddImage} style={styles.addImageButton}>
+              <Text style={styles.addImageButtonText}>📷 Add Memory Image</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
+
+      {/* Edit Meanings Modal */}
+      <Modal
+        visible={editModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Meanings for {character.char}</Text>
+            <Text style={styles.modalHint}>Enter one meaning per line</Text>
+            <TextInput
+              style={styles.modalTextInput}
+              value={editedMeanings}
+              onChangeText={setEditedMeanings}
+              multiline
+              numberOfLines={10}
+              placeholder="meaning 1&#10;meaning 2&#10;meaning 3"
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={() => setEditModalVisible(false)}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSave]}
+                onPress={handleSaveMeanings}
+              >
+                <Text style={[styles.modalButtonText, { color: COLORS.white }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Compounds */}
       {character.compounds && character.compounds.length > 0 && (
@@ -377,5 +489,87 @@ const styles = StyleSheet.create({
     color: COLORS.textDark,
     marginTop: 6,
     lineHeight: 20,
+  },
+  editButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  editButtonText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  addImageButton: {
+    backgroundColor: COLORS.info,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 15,
+    alignItems: 'center',
+  },
+  addImageButtonText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 20,
+    width: '100%',
+    maxWidth: 500,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.textDark,
+    marginBottom: 5,
+  },
+  modalHint: {
+    fontSize: 14,
+    color: COLORS.textMedium,
+    marginBottom: 15,
+  },
+  modalTextInput: {
+    borderWidth: 1,
+    borderColor: COLORS.darkGray,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    minHeight: 200,
+    textAlignVertical: 'top',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 20,
+    gap: 10,
+  },
+  modalButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  modalButtonCancel: {
+    backgroundColor: COLORS.lightGray,
+  },
+  modalButtonSave: {
+    backgroundColor: COLORS.success,
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.textDark,
   },
 });

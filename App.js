@@ -19,8 +19,8 @@ import ProfileIcon from './src/components/icons/ProfileIcon';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-// Home Stack Navigator
-function HomeStack() {
+// Home Stack Navigator (needs isAdmin from parent)
+function HomeStack({ isAdmin }) {
   return (
     <Stack.Navigator
       screenOptions={{
@@ -42,11 +42,12 @@ function HomeStack() {
       />
       <Stack.Screen
         name="CharacterDetail"
-        component={CharacterDetailScreen}
         options={({ route }) => ({
           title: route.params?.character?.char || 'Character'
         })}
-      />
+      >
+        {(props) => <CharacterDetailScreen {...props} isAdmin={isAdmin} />}
+      </Stack.Screen>
     </Stack.Navigator>
   );
 }
@@ -54,6 +55,7 @@ function HomeStack() {
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState({ online: true, queueSize: 0 });
   const [dueCardsCount, setDueCardsCount] = useState(0);
@@ -113,9 +115,11 @@ export default function App() {
     try {
       // Check for saved user session
       const savedUser = await AsyncStorage.getItem('currentUser');
+      const savedIsAdmin = await AsyncStorage.getItem('isAdmin');
       if (savedUser) {
-        console.log('[APP] Found saved user:', savedUser);
+        console.log('[APP] Found saved user:', savedUser, 'isAdmin:', savedIsAdmin);
         setCurrentUser(savedUser);
+        setIsAdmin(savedIsAdmin === 'true');
         setIsAuthenticated(true);
       }
 
@@ -137,12 +141,14 @@ export default function App() {
     setLoading(false);
   };
 
-  const handleLogin = (username, isAdmin) => {
-    console.log('[APP] handleLogin called with:', username, isAdmin);
+  const handleLogin = async (username, adminStatus) => {
+    console.log('[APP] handleLogin called with:', username, 'isAdmin:', adminStatus);
+    await AsyncStorage.setItem('currentUser', username);
+    await AsyncStorage.setItem('isAdmin', adminStatus ? 'true' : 'false');
     setCurrentUser(username);
-    console.log('[APP] setCurrentUser completed');
+    setIsAdmin(!!adminStatus);
     setIsAuthenticated(true);
-    console.log('[APP] setIsAuthenticated completed - will now render NavigationContainer');
+    console.log('[APP] Login complete - isAdmin:', !!adminStatus);
   };
 
   const handleLogout = async () => {
@@ -150,6 +156,7 @@ export default function App() {
     await AsyncStorage.removeItem('isAdmin');
     setIsAuthenticated(false);
     setCurrentUser(null);
+    setIsAdmin(false);
   };
 
   if (loading) {
@@ -204,7 +211,6 @@ export default function App() {
         >
           <Tab.Screen
             name="Home"
-            component={HomeStack}
             options={{
               tabBarLabel: 'Characters',
               tabBarIcon: ({ color, focused }) => (
@@ -212,7 +218,9 @@ export default function App() {
               ),
               headerShown: false,
             }}
-          />
+          >
+            {() => <HomeStack isAdmin={isAdmin} />}
+          </Tab.Screen>
 
           <Tab.Screen
             name="Quiz"
