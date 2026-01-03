@@ -393,23 +393,103 @@ export default function QuizScreen() {
         return;
       }
 
-      // Filter out items reviewed very recently (within last 5 minutes) to avoid repetition
-      const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-      const eligibleItems = quizItems.filter(item => {
-        if (!item.quizData || !item.quizData.lastReviewed) {
-          return true; // Include new items
+      // ANKI-STYLE FILTERING: Only show due/overdue items (unless user wants to practice anyway)
+      const now = Date.now();
+      const today = new Date().setHours(23, 59, 59, 999);
+      const todayStart = new Date().setHours(0, 0, 0, 0);
+
+      // Categorize items by review status
+      const categorized = quizItems.map(item => {
+        const quizData = item.quizData;
+
+        // New items (never reviewed)
+        if (!quizData || !quizData.nextReview) {
+          return { ...item, category: 'new', dueStatus: 'new' };
         }
-        return item.quizData.lastReviewed < fiveMinutesAgo; // Exclude recently reviewed
+
+        const nextReview = quizData.nextReview;
+        const lastReviewed = quizData.lastReviewed;
+
+        // Check if already reviewed today
+        const reviewedToday = lastReviewed && lastReviewed >= todayStart;
+
+        // Overdue
+        if (now >= nextReview) {
+          return {
+            ...item,
+            category: reviewedToday ? 'reviewed-today' : 'overdue',
+            dueStatus: 'overdue',
+            daysOverdue: Math.floor((now - nextReview) / (24 * 60 * 60 * 1000))
+          };
+        }
+
+        // Due today
+        if (nextReview <= today) {
+          return {
+            ...item,
+            category: reviewedToday ? 'reviewed-today' : 'due-today',
+            dueStatus: 'due-today'
+          };
+        }
+
+        // Future review
+        return { ...item, category: 'not-due', dueStatus: 'future' };
       });
 
-      console.log('[QUIZ] Filtered items:', {
+      // Filter: show overdue + due-today + new (exclude already reviewed today and future items)
+      const dueItems = categorized.filter(item =>
+        item.category === 'overdue' ||
+        item.category === 'due-today' ||
+        item.category === 'new'
+      );
+
+      const reviewedTodayCount = categorized.filter(item => item.category === 'reviewed-today').length;
+      const notDueCount = categorized.filter(item => item.category === 'not-due').length;
+
+      console.log('[QUIZ] 📅 Anki-style filtering:', {
         total: quizItems.length,
-        eligible: eligibleItems.length,
-        recentlyReviewed: quizItems.length - eligibleItems.length
+        overdue: categorized.filter(i => i.category === 'overdue').length,
+        dueToday: categorized.filter(i => i.category === 'due-today').length,
+        new: categorized.filter(i => i.category === 'new').length,
+        reviewedToday: reviewedTodayCount,
+        notDue: notDueCount,
+        eligible: dueItems.length
       });
 
-      // If less than 10 eligible items, use all items (user wants to practice)
-      const itemsToQuiz = eligibleItems.length >= 10 ? eligibleItems : quizItems;
+      // If no items due, show "all caught up" message
+      if (dueItems.length === 0) {
+        const nextDueItem = categorized
+          .filter(item => item.category === 'not-due')
+          .sort((a, b) => (a.quizData?.nextReview || 0) - (b.quizData?.nextReview || 0))[0];
+
+        const nextDueDate = nextDueItem?.quizData?.nextReview
+          ? new Date(nextDueItem.quizData.nextReview).toLocaleDateString()
+          : 'unknown';
+
+        Alert.alert(
+          '🎉 All Caught Up!',
+          `Great work! You've completed all reviews for today.\n\n` +
+          `📊 Summary:\n` +
+          `• Reviewed today: ${reviewedTodayCount}\n` +
+          `• Not due yet: ${notDueCount}\n` +
+          `• Next review: ${nextDueDate}\n\n` +
+          `Want to practice anyway?`,
+          [
+            { text: 'Done for Today', style: 'cancel' },
+            {
+              text: 'Practice Anyway',
+              onPress: () => {
+                // Restart with all items (practice mode)
+                console.log('[QUIZ] User chose to practice anyway');
+                // TODO: Set practice mode flag
+              }
+            }
+          ]
+        );
+        return;
+      }
+
+      const itemsToQuiz = dueItems;
 
       // Use SM-2 prioritization: due items first, then struggling, then new, then mastered
       const prioritized = prioritizeQuizItems(itemsToQuiz);
@@ -699,41 +779,72 @@ export default function QuizScreen() {
         });
       }
 
-      // IMPORTANT: Filter in correct order to prevent same questions appearing
-      // 1. Filter out recently reviewed words (time-based)
-      const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
-      const unrecentlyReviewedItems = quizItems.filter(item => {
-        // Exclude words reviewed in last 10 minutes (prevents immediate repetition)
-        // This allows cycling through all known words without seeing same ones too quickly
-        if (item.quizData && item.quizData.lastReviewed && item.quizData.lastReviewed >= tenMinutesAgo) {
+      // ANKI-STYLE FILTERING: Only show due/overdue items
+      const now = Date.now();
+      const today = new Date().setHours(23, 59, 59, 999);
+      const todayStart = new Date().setHours(0, 0, 0, 0);
+
+      // Categorize items by review status
+      const dueItems = quizItems.filter(item => {
+        const quizData = item.quizData;
+
+        // New items (never reviewed)
+        if (!quizData || !quizData.nextReview) {
+          return true;
+        }
+
+        const nextReview = quizData.nextReview;
+        const lastReviewed = quizData.lastReviewed;
+
+        // Already reviewed today - skip
+        if (lastReviewed && lastReviewed >= todayStart) {
           return false;
         }
-        return true;
+
+        // Overdue or due today
+        if (nextReview <= today) {
+          return true;
+        }
+
+        // Future review - skip
+        return false;
       });
 
-      // 2. Then filter out items already in current quiz array
+      // Filter out items already in current quiz array
       const currentWords = quiz.map(item => item.word);
-      const eligibleItems = unrecentlyReviewedItems.filter(item => !currentWords.includes(item.word));
+      const eligibleItems = dueItems.filter(item => !currentWords.includes(item.word));
 
       // Count types in each stage
       const quizCharCount = quizItems.filter(i => i.type === 'character').length;
       const quizCompCount = quizItems.filter(i => i.type === 'compound').length;
+      const dueCharCount = dueItems.filter(i => i.type === 'character').length;
+      const dueCompCount = dueItems.filter(i => i.type === 'compound').length;
       const eligCharCount = eligibleItems.filter(i => i.type === 'character').length;
       const eligCompCount = eligibleItems.filter(i => i.type === 'compound').length;
 
-      console.log('[QUIZ] 🔍 Filtering breakdown:', {
+      console.log('[QUIZ] 🔍 Anki filtering breakdown:', {
         total: quizItems.length,
         totalBreakdown: `${quizCharCount} chars + ${quizCompCount} compounds`,
-        unrecentlyReviewed: unrecentlyReviewedItems.length,
+        dueItems: dueItems.length,
+        dueBreakdown: `${dueCharCount} chars + ${dueCompCount} compounds`,
         eligible: eligibleItems.length,
         eligibleBreakdown: `${eligCharCount} chars + ${eligCompCount} compounds`,
-        currentQuizSize: quiz.length,
-        tenMinCutoff: new Date(tenMinutesAgo).toLocaleTimeString()
+        currentQuizSize: quiz.length
       });
 
       // ALWAYS use eligibleItems (never show words already in quiz)
       if (eligibleItems.length === 0) {
-        console.log('[QUIZ] No more eligible items available');
+        console.log('[QUIZ] ✅ No more due items available - all caught up!');
+
+        // Finish quiz with current score - user has completed all reviews
+        Alert.alert(
+          '🎉 All Reviews Complete!',
+          `Excellent work! You've finished all your reviews for today.\n\n` +
+          `Come back tomorrow for more practice!`,
+          [{ text: 'Done', onPress: () => {
+            // TODO: Navigate back to home or show completion screen
+          }}]
+        );
         return false;
       }
 
