@@ -366,6 +366,10 @@ export default function QuizScreen() {
         });
       }
 
+      // Count breakdown
+      const characterCount = quizItems.filter(item => item.type === 'character').length;
+      const compoundCount = quizItems.filter(item => item.type === 'compound').length;
+
       console.log('[QUIZ] Progress data structure:', {
         hasCharacterProgress: !!progressData.characterProgress,
         characterProgressKeys: progressData.characterProgress ? Object.keys(progressData.characterProgress).length : 0,
@@ -374,7 +378,12 @@ export default function QuizScreen() {
         sampleCharProgress: progressData.characterProgress ? Object.entries(progressData.characterProgress).slice(0, 2) : [],
         sampleCompoundProgress: progressData.compoundProgress ? Object.entries(progressData.compoundProgress).slice(0, 2) : []
       });
-      console.log('[QUIZ] Found', quizItems.length, 'items for quiz (characters + compounds)');
+      console.log('[QUIZ] 📊 Item breakdown:', {
+        totalItems: quizItems.length,
+        characters: characterCount,
+        compounds: compoundCount,
+        sampleCompounds: quizItems.filter(item => item.type === 'compound').slice(0, 5).map(item => item.word)
+      });
 
       if (quizItems.length === 0) {
         Alert.alert(
@@ -706,10 +715,18 @@ export default function QuizScreen() {
       const currentWords = quiz.map(item => item.word);
       const eligibleItems = unrecentlyReviewedItems.filter(item => !currentWords.includes(item.word));
 
-      console.log('[QUIZ] Filtering:', {
+      // Count types in each stage
+      const quizCharCount = quizItems.filter(i => i.type === 'character').length;
+      const quizCompCount = quizItems.filter(i => i.type === 'compound').length;
+      const eligCharCount = eligibleItems.filter(i => i.type === 'character').length;
+      const eligCompCount = eligibleItems.filter(i => i.type === 'compound').length;
+
+      console.log('[QUIZ] 🔍 Filtering breakdown:', {
         total: quizItems.length,
+        totalBreakdown: `${quizCharCount} chars + ${quizCompCount} compounds`,
         unrecentlyReviewed: unrecentlyReviewedItems.length,
         eligible: eligibleItems.length,
+        eligibleBreakdown: `${eligCharCount} chars + ${eligCompCount} compounds`,
         currentQuizSize: quiz.length,
         tenMinCutoff: new Date(tenMinutesAgo).toLocaleTimeString()
       });
