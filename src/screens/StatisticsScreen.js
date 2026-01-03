@@ -206,18 +206,30 @@ export default function StatisticsScreen() {
 
   // Get items due for review (Anki-style)
   const getDueItems = () => {
-    if (!progressData) return { overdue: [], dueToday: [] };
+    if (!progressData) return { overdue: [], dueToday: [], newItems: [] };
 
     const now = Date.now();
     const today = new Date().setHours(23, 59, 59, 999);
     const todayStart = new Date().setHours(0, 0, 0, 0);
     const overdue = [];
     const dueToday = [];
+    const newItems = [];
 
     // Check character progress
     if (progressData.characterProgress) {
       Object.keys(progressData.characterProgress).forEach(char => {
         const charData = progressData.characterProgress[char];
+
+        // New items (marked as known but never quizzed)
+        if (charData?.known && !charData?.quizScore) {
+          newItems.push({
+            word: char,
+            type: 'character',
+            isNew: true
+          });
+          return;
+        }
+
         if (charData?.quizScore?.nextReview) {
           const quizData = charData.quizScore;
           const lastReviewed = quizData.lastReviewed;
@@ -256,6 +268,21 @@ export default function StatisticsScreen() {
     if (progressData.compoundProgress) {
       Object.keys(progressData.compoundProgress).forEach(char => {
         const charProgress = progressData.compoundProgress[char];
+
+        // New compound words (marked as known but never quizzed)
+        if (charProgress?.known && Array.isArray(charProgress.known)) {
+          charProgress.known.forEach(word => {
+            // Check if this word has been quizzed
+            if (!charProgress.quizScores || !charProgress.quizScores[word]) {
+              newItems.push({
+                word,
+                type: 'compound',
+                isNew: true
+              });
+            }
+          });
+        }
+
         if (charProgress?.quizScores) {
           Object.keys(charProgress.quizScores).forEach(word => {
             const quizData = charProgress.quizScores[word];
@@ -298,7 +325,7 @@ export default function StatisticsScreen() {
     overdue.sort((a, b) => b.daysOverdue - a.daysOverdue);
     dueToday.sort((a, b) => a.nextReview - b.nextReview);
 
-    return { overdue, dueToday };
+    return { overdue, dueToday, newItems };
   };
 
   // Port of website's getRecentActivity function
@@ -407,15 +434,17 @@ export default function StatisticsScreen() {
 
       {/* Due Today Section */}
       {(() => {
-        const { overdue, dueToday } = getDueItems();
+        const { overdue, dueToday, newItems } = getDueItems();
         const totalDue = overdue.length + dueToday.length;
+        const totalNew = newItems.length;
 
-        if (totalDue === 0) {
+        // Show section if there are reviews OR new items
+        if (totalDue === 0 && totalNew === 0) {
           return (
             <View style={styles.dueSection}>
               <Text style={styles.dueSectionTitle}>🎉 All Caught Up!</Text>
               <Text style={styles.allCaughtUpText}>
-                No reviews due today. Great work!
+                No reviews or new items available!
               </Text>
             </View>
           );
@@ -423,9 +452,16 @@ export default function StatisticsScreen() {
 
         return (
           <View style={styles.dueSection}>
-            <Text style={styles.dueSectionTitle}>
-              📋 Reviews Due Today ({totalDue})
-            </Text>
+            {totalDue > 0 && (
+              <Text style={styles.dueSectionTitle}>
+                📋 Reviews Due Today ({totalDue})
+              </Text>
+            )}
+            {totalDue === 0 && totalNew > 0 && (
+              <Text style={styles.dueSectionTitle}>
+                📚 Ready to Learn
+              </Text>
+            )}
 
             {overdue.length > 0 && (
               <View style={styles.dueCategory}>
@@ -467,6 +503,28 @@ export default function StatisticsScreen() {
               </View>
             )}
 
+            {newItems.length > 0 && (
+              <View style={styles.dueCategory}>
+                <Text style={styles.dueCategoryTitle}>
+                  🆕 New Items ({newItems.length})
+                </Text>
+                <Text style={styles.newItemsSubtext}>
+                  {newItems.filter(i => i.type === 'character').length} characters + {newItems.filter(i => i.type === 'compound').length} compounds
+                </Text>
+                {newItems.slice(0, 5).map((item, idx) => (
+                  <View key={idx} style={styles.dueItem}>
+                    <Text style={styles.dueWord}>{item.word}</Text>
+                    <Text style={styles.dueInfo}>{item.type}</Text>
+                  </View>
+                ))}
+                {newItems.length > 5 && (
+                  <Text style={styles.moreItems}>
+                    ... and {newItems.length - 5} more
+                  </Text>
+                )}
+              </View>
+            )}
+
             <TouchableOpacity
               style={styles.startReviewButton}
               onPress={() => {
@@ -476,7 +534,7 @@ export default function StatisticsScreen() {
               }}
             >
               <Text style={styles.startReviewButtonText}>
-                Start Review Session
+                {totalDue > 0 ? `Start Review (${totalDue} due)` : `Learn New Items (${totalNew})`}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1143,6 +1201,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.textDark,
     marginBottom: 8,
+  },
+  newItemsSubtext: {
+    fontSize: 14,
+    color: COLORS.textMedium,
+    marginBottom: 8,
+    fontStyle: 'italic',
   },
   dueItem: {
     flexDirection: 'row',
