@@ -1,0 +1,22 @@
+// FIX: Update login endpoint to check Edit/Upload permissions for isAdmin
+// APPLIED: 2026-01-03
+
+// Database schema:
+// can_edit_definitions (column 8)
+// can_upload_images (column 9)
+
+// Line 590 - Changed SELECT to include permission columns:
+// BEFORE:
+const result = db.exec('SELECT id, username, password_hash, is_admin FROM users WHERE username = ?', [username]);
+
+// AFTER:
+const result = db.exec('SELECT id, username, password_hash, is_admin, can_edit_definitions, can_upload_images FROM users WHERE username = ?', [username]);
+
+// Line 603 - Changed isAdmin logic to check permissions:
+// BEFORE:
+const isAdmin = row[3] === 1;
+
+// AFTER:
+const isAdmin = row[3] === 1 || row[4] === 1 || row[5] === 1;  // is_admin OR can_edit_definitions OR can_upload_images
+
+// Backup created at: server-synology.js.backup-before-admin-fix
