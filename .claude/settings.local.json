@@ -15,7 +15,14 @@
       "Bash(ls:*)",
       "Bash(set EAS_LOCAL_BUILD_SKIP_CLEANUP=1)",
       "Bash(set TMPDIR=C:Userss.batemantemp)",
-      "Bash(eas build:*)"
+      "Bash(eas build:*)",
+      "Bash(adb logcat:*)",
+      "Bash(where:*)",
+      "Bash(npx react-native log-android:*)",
+      "Bash(ssh:*)",
+      "Bash(node -e:*)",
+      "Bash(scp:*)",
+      "Bash(pscp:*)"
     ]
   }
 }

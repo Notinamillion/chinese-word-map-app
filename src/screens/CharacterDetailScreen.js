@@ -16,6 +16,18 @@ export default function CharacterDetailScreen({ route }) {
   const [charProgress, setCharProgress] = useState(0);
   const [compoundKnownList, setCompoundKnownList] = useState({});
 
+  // DEBUG: Log what character data we received
+  console.log('[DETAIL] Character data received:', {
+    char: character.char,
+    pinyin: character.pinyin,
+    hasMeanings: !!character.meanings,
+    meaningsCount: character.meanings?.length || 0,
+    meanings: character.meanings,
+    hasCompounds: !!character.compounds,
+    compoundsCount: character.compounds?.length || 0,
+    allFields: Object.keys(character)
+  });
+
   useEffect(() => {
     loadProgress();
   }, []);
@@ -145,56 +157,20 @@ export default function CharacterDetailScreen({ route }) {
       <View style={styles.characterSection}>
         <Text style={styles.character}>{character.char}</Text>
         <Text style={styles.pinyin}>{character.pinyin}</Text>
-      </View>
 
-      {/* Progress Bar */}
-      <View style={styles.progressSection}>
-        <Text style={styles.sectionTitle}>Learning Progress</Text>
-        <View style={styles.progressBar}>
-          <View
-            style={[
-              styles.progressFill,
-              { width: `${charProgress}%`, backgroundColor: getProgressColor() }
-            ]}
-          />
+        {/* Meanings - directly below pinyin */}
+        <View style={{ marginTop: 20, width: '100%' }}>
+          <Text style={[styles.sectionTitle, { fontSize: 20, color: COLORS.textDark, marginBottom: 10 }]}>Meanings</Text>
+          {character.meanings && character.meanings.length > 0 ? (
+            character.meanings.map((meaning, index) => (
+              <Text key={index} style={[styles.meaningText, { fontSize: 16, color: COLORS.textMedium }]}>
+                • {meaning}
+              </Text>
+            ))
+          ) : (
+            <Text style={{ fontSize: 14, color: COLORS.error }}>No meanings available</Text>
+          )}
         </View>
-        <Text style={[styles.progressText, { color: getProgressColor() }]}>
-          {charProgress}%
-        </Text>
-      </View>
-
-      {/* Progress Buttons */}
-      <View style={styles.buttonSection}>
-        <TouchableOpacity
-          style={[styles.progressButton, styles.notStarted]}
-          onPress={() => updateProgress(0)}
-        >
-          <Text style={styles.buttonText}>Not Started (0%)</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.progressButton, styles.learning]}
-          onPress={() => updateProgress(50)}
-        >
-          <Text style={styles.buttonText}>Learning (50%)</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.progressButton, styles.mastered]}
-          onPress={() => updateProgress(100)}
-        >
-          <Text style={styles.buttonText}>Mastered (100%)</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Meanings */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Meanings</Text>
-        {character.meanings && character.meanings.map((meaning, index) => (
-          <Text key={index} style={styles.meaningText}>
-            • {meaning}
-          </Text>
-        ))}
       </View>
 
       {/* Compounds */}

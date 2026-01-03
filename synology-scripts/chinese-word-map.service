@@ -1,0 +1,16 @@
+[Unit]
+Description=Chinese Word Map Server
+After=network.target
+
+[Service]
+Type=simple
+User=administrator
+WorkingDirectory=/volume1/web/chinese-word-map
+ExecStart=/usr/local/bin/node server-synology.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/volume1/web/chinese-word-map/server.log
+StandardError=append:/volume1/web/chinese-word-map/server.log
+
+[Install]
+WantedBy=multi-user.target

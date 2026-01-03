@@ -1,0 +1,35 @@
+// Add this after line 233 (after "// Middleware" comment):
+
+// Request logging for debugging mobile app
+app.use((req, res, next) => {
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] ${req.method} ${req.path}`;
+
+    // Log to console (appears in server.log)
+    console.log(logEntry);
+
+    // For important API calls, log more details
+    if (req.path.startsWith('/api/')) {
+        console.log(`  User-Agent: ${req.headers['user-agent']}`);
+        if (req.body && Object.keys(req.body).length > 0) {
+            // Don't log full progress data (too large), just show it exists
+            if (req.body.characterProgress || req.body.compoundProgress) {
+                console.log(`  Body: [Progress data - ${JSON.stringify(req.body).length} bytes]`);
+            } else {
+                console.log(`  Body:`, JSON.stringify(req.body).substring(0, 200));
+            }
+        }
+    }
+
+    next();
+});
+
+// Log response status
+app.use((req, res, next) => {
+    const originalSend = res.send;
+    res.send = function(data) {
+        console.log(`  Response: ${res.statusCode}`);
+        originalSend.call(this, data);
+    };
+    next();
+});
