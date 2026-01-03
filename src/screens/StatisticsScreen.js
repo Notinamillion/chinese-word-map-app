@@ -204,6 +204,103 @@ export default function StatisticsScreen() {
     return stats;
   };
 
+  // Get items due for review (Anki-style)
+  const getDueItems = () => {
+    if (!progressData) return { overdue: [], dueToday: [] };
+
+    const now = Date.now();
+    const today = new Date().setHours(23, 59, 59, 999);
+    const todayStart = new Date().setHours(0, 0, 0, 0);
+    const overdue = [];
+    const dueToday = [];
+
+    // Check character progress
+    if (progressData.characterProgress) {
+      Object.keys(progressData.characterProgress).forEach(char => {
+        const charData = progressData.characterProgress[char];
+        if (charData?.quizScore?.nextReview) {
+          const quizData = charData.quizScore;
+          const lastReviewed = quizData.lastReviewed;
+          const nextReview = quizData.nextReview;
+
+          // Skip if already reviewed today
+          if (lastReviewed && lastReviewed >= todayStart) {
+            return;
+          }
+
+          // Overdue
+          if (nextReview < now) {
+            const daysOverdue = Math.floor((now - nextReview) / (24 * 60 * 60 * 1000));
+            overdue.push({
+              word: char,
+              type: 'character',
+              daysOverdue,
+              score: quizData.score,
+              nextReview
+            });
+          }
+          // Due today
+          else if (nextReview <= today) {
+            dueToday.push({
+              word: char,
+              type: 'character',
+              score: quizData.score,
+              nextReview
+            });
+          }
+        }
+      });
+    }
+
+    // Check compound progress
+    if (progressData.compoundProgress) {
+      Object.keys(progressData.compoundProgress).forEach(char => {
+        const charProgress = progressData.compoundProgress[char];
+        if (charProgress?.quizScores) {
+          Object.keys(charProgress.quizScores).forEach(word => {
+            const quizData = charProgress.quizScores[word];
+            if (quizData?.nextReview) {
+              const lastReviewed = quizData.lastReviewed;
+              const nextReview = quizData.nextReview;
+
+              // Skip if already reviewed today
+              if (lastReviewed && lastReviewed >= todayStart) {
+                return;
+              }
+
+              // Overdue
+              if (nextReview < now) {
+                const daysOverdue = Math.floor((now - nextReview) / (24 * 60 * 60 * 1000));
+                overdue.push({
+                  word,
+                  type: 'compound',
+                  daysOverdue,
+                  score: quizData.score,
+                  nextReview
+                });
+              }
+              // Due today
+              else if (nextReview <= today) {
+                dueToday.push({
+                  word,
+                  type: 'compound',
+                  score: quizData.score,
+                  nextReview
+                });
+              }
+            }
+          });
+        }
+      });
+    }
+
+    // Sort by most overdue first
+    overdue.sort((a, b) => b.daysOverdue - a.daysOverdue);
+    dueToday.sort((a, b) => a.nextReview - b.nextReview);
+
+    return { overdue, dueToday };
+  };
+
   // Port of website's getRecentActivity function
   const getRecentActivity = (days = 7) => {
     if (!progressData?.statistics?.dailyStats) {
@@ -307,6 +404,84 @@ export default function StatisticsScreen() {
           <Text style={styles.summaryLabel}>Day Streak</Text>
         </View>
       </View>
+
+      {/* Due Today Section */}
+      {(() => {
+        const { overdue, dueToday } = getDueItems();
+        const totalDue = overdue.length + dueToday.length;
+
+        if (totalDue === 0) {
+          return (
+            <View style={styles.dueSection}>
+              <Text style={styles.dueSectionTitle}>🎉 All Caught Up!</Text>
+              <Text style={styles.allCaughtUpText}>
+                No reviews due today. Great work!
+              </Text>
+            </View>
+          );
+        }
+
+        return (
+          <View style={styles.dueSection}>
+            <Text style={styles.dueSectionTitle}>
+              📋 Reviews Due Today ({totalDue})
+            </Text>
+
+            {overdue.length > 0 && (
+              <View style={styles.dueCategory}>
+                <Text style={styles.dueCategoryTitle}>
+                  🔴 Overdue ({overdue.length})
+                </Text>
+                {overdue.slice(0, 5).map((item, idx) => (
+                  <View key={idx} style={styles.dueItem}>
+                    <Text style={styles.dueWord}>{item.word}</Text>
+                    <Text style={styles.dueInfo}>
+                      {item.daysOverdue} {item.daysOverdue === 1 ? 'day' : 'days'} overdue
+                    </Text>
+                  </View>
+                ))}
+                {overdue.length > 5 && (
+                  <Text style={styles.moreItems}>
+                    ... and {overdue.length - 5} more
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {dueToday.length > 0 && (
+              <View style={styles.dueCategory}>
+                <Text style={styles.dueCategoryTitle}>
+                  🟡 Due Today ({dueToday.length})
+                </Text>
+                {dueToday.slice(0, 5).map((item, idx) => (
+                  <View key={idx} style={styles.dueItem}>
+                    <Text style={styles.dueWord}>{item.word}</Text>
+                    <Text style={styles.dueInfo}>Score: {item.score}/5</Text>
+                  </View>
+                ))}
+                {dueToday.length > 5 && (
+                  <Text style={styles.moreItems}>
+                    ... and {dueToday.length - 5} more
+                  </Text>
+                )}
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.startReviewButton}
+              onPress={() => {
+                // Navigate to Quiz screen
+                // TODO: Add navigation
+                console.log('[STATS] Start review button pressed');
+              }}
+            >
+              <Text style={styles.startReviewButtonText}>
+                Start Review Session
+              </Text>
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
 
       {/* Tabs */}
       <View style={styles.tabs}>
@@ -933,5 +1108,78 @@ const styles = StyleSheet.create({
   },
   syncTextSynced: {
     color: COLORS.white,
+  },
+  dueSection: {
+    backgroundColor: COLORS.white,
+    margin: 20,
+    marginTop: 10,
+    padding: 20,
+    borderRadius: 12,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: COLORS.primaryLight,
+  },
+  dueSectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.textDark,
+    marginBottom: 16,
+  },
+  allCaughtUpText: {
+    fontSize: 14,
+    color: COLORS.textMedium,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  dueCategory: {
+    marginBottom: 16,
+  },
+  dueCategoryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.textDark,
+    marginBottom: 8,
+  },
+  dueItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: COLORS.lightGray,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  dueWord: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.textDark,
+  },
+  dueInfo: {
+    fontSize: 14,
+    color: COLORS.textMedium,
+  },
+  moreItems: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  startReviewButton: {
+    backgroundColor: COLORS.primary,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  startReviewButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
