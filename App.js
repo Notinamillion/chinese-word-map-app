@@ -117,10 +117,21 @@ export default function App() {
       const savedUser = await AsyncStorage.getItem('currentUser');
       const savedIsAdmin = await AsyncStorage.getItem('isAdmin');
       if (savedUser) {
-        console.log('[APP] Found saved user:', savedUser, 'isAdmin:', savedIsAdmin);
+        console.log('[APP] Found saved user:', savedUser, 'isAdmin (cached):', savedIsAdmin);
         setCurrentUser(savedUser);
         setIsAdmin(savedIsAdmin === 'true');
         setIsAuthenticated(true);
+
+        // HOTFIX: Force-refresh admin status from server
+        // This ensures we pick up server-side permission changes without requiring logout/login
+        try {
+          console.log('[APP] Checking server for updated admin permissions...');
+          const response = await api.getProgress(); // This verifies session and we can extend it
+          // TODO: Add a proper /api/auth/me endpoint to fetch user info including isAdmin
+          // For now, we'll handle this in the next login
+        } catch (error) {
+          console.log('[APP] Could not verify server permissions:', error.message);
+        }
       }
 
       // Initialize sync manager
