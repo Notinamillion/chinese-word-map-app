@@ -13,7 +13,7 @@ import {
 import api from '../services/api';
 
 export default function AuthScreen({ onLogin }) {
-  const [mode, setMode] = useState('login'); // 'login' or 'register'
+  const [mode, setMode] = useState('login'); // 'login', 'register', or 'forgot'
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -78,6 +78,35 @@ export default function AuthScreen({ onLogin }) {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await api.forgotPassword(email);
+      if (result.success) {
+        Alert.alert(
+          'Email Sent',
+          'If an account exists with this email, you will receive a password reset link shortly. Please check your inbox.',
+          [{ text: 'OK', onPress: () => setMode('login') }]
+        );
+        setEmail('');
+      } else {
+        Alert.alert('Error', result.message || 'Could not send reset email');
+      }
+    } catch (error) {
+      const errorMsg = error.code === 'ECONNREFUSED' || error.message?.includes('Network')
+        ? 'Cannot reach server. Please check your internet connection.'
+        : `Error: ${error.message || 'Unknown error'}`;
+      Alert.alert('Connection Error', errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -86,19 +115,23 @@ export default function AuthScreen({ onLogin }) {
       <View style={styles.content}>
         <Text style={styles.title}>🀄 Chinese Word Map</Text>
         <Text style={styles.subtitle}>
-          {mode === 'login' ? 'Sign in to continue' : 'Create your account'}
+          {mode === 'login' && 'Sign in to continue'}
+          {mode === 'register' && 'Create your account'}
+          {mode === 'forgot' && 'Reset your password'}
         </Text>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Username"
-          value={username}
-          onChangeText={setUsername}
-          autoCapitalize="none"
-          editable={!loading}
-        />
+        {mode !== 'forgot' && (
+          <TextInput
+            style={styles.input}
+            placeholder="Username"
+            value={username}
+            onChangeText={setUsername}
+            autoCapitalize="none"
+            editable={!loading}
+          />
+        )}
 
-        {mode === 'register' && (
+        {(mode === 'register' || mode === 'forgot') && (
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -110,37 +143,61 @@ export default function AuthScreen({ onLogin }) {
           />
         )}
 
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          editable={!loading}
-        />
+        {mode !== 'forgot' && (
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            editable={!loading}
+          />
+        )}
 
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={mode === 'login' ? handleLogin : handleRegister}
+          onPress={
+            mode === 'login' ? handleLogin :
+            mode === 'register' ? handleRegister :
+            handleForgotPassword
+          }
           disabled={loading}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={styles.buttonText}>
-              {mode === 'login' ? 'Sign In' : 'Create Account'}
+              {mode === 'login' && 'Sign In'}
+              {mode === 'register' && 'Create Account'}
+              {mode === 'forgot' && 'Send Reset Link'}
             </Text>
           )}
         </TouchableOpacity>
 
+        {mode === 'login' && (
+          <TouchableOpacity
+            onPress={() => setMode('forgot')}
+            disabled={loading}
+            style={{ marginTop: 15 }}
+          >
+            <Text style={styles.forgotText}>Forgot password?</Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
-          onPress={() => setMode(mode === 'login' ? 'register' : 'login')}
+          onPress={() => {
+            if (mode === 'forgot') {
+              setMode('login');
+            } else {
+              setMode(mode === 'login' ? 'register' : 'login');
+            }
+          }}
           disabled={loading}
         >
           <Text style={styles.switchText}>
-            {mode === 'login'
-              ? "Don't have an account? Sign up"
-              : 'Already have an account? Sign in'}
+            {mode === 'login' && "Don't have an account? Sign up"}
+            {mode === 'register' && 'Already have an account? Sign in'}
+            {mode === 'forgot' && '← Back to sign in'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -179,6 +236,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: '#ddd',
+    color: '#333',
   },
   button: {
     backgroundColor: '#667eea',
@@ -199,6 +257,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#667eea',
     marginTop: 20,
+    fontSize: 14,
+  },
+  forgotText: {
+    textAlign: 'center',
+    color: '#667eea',
     fontSize: 14,
   },
 });

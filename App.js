@@ -8,6 +8,7 @@ import syncManager from './src/services/syncManager';
 import AuthScreen from './src/screens/AuthScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import CharacterDetailScreen from './src/screens/CharacterDetailScreen';
+import SentencePracticeScreen from './src/screens/SentencePracticeScreen';
 import QuizScreen from './src/screens/QuizScreen';
 import StatisticsScreen from './src/screens/StatisticsScreen';
 import { COLORS } from './src/theme/colors';
@@ -48,6 +49,11 @@ function HomeStack({ isAdmin }) {
       >
         {(props) => <CharacterDetailScreen {...props} isAdmin={isAdmin} />}
       </Stack.Screen>
+      <Stack.Screen
+        name="SentencePractice"
+        component={SentencePracticeScreen}
+        options={{ title: 'Sentence Practice', headerShown: false }}
+      />
     </Stack.Navigator>
   );
 }

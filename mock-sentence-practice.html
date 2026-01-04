@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentence Practice Mock - Chinese Word Map</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+      max-width: 414px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 16px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 48px;
+      margin-bottom: 8px;
+    }
+
+    .header .pinyin {
+      font-size: 20px;
+      opacity: 0.9;
+      margin-bottom: 4px;
+    }
+
+    .header .back-btn {
+      position: absolute;
+      left: 20px;
+      top: 20px;
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .section {
+      background: white;
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #333;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sense-card {
+      background: #f9f9f9;
+      border-left: 4px solid #667eea;
+      padding: 16px;
+      margin-bottom: 16px;
+      border-radius: 8px;
+    }
+
+    .sense-card.struggling {
+      border-left-color: #f44336;
+    }
+
+    .sense-card.learning {
+      border-left-color: #ff9800;
+    }
+
+    .sense-card.mastered {
+      border-left-color: #4caf50;
+    }
+
+    .sense-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .sense-meaning {
+      font-size: 16px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .mastery-badge {
+      display: flex;
+      gap: 4px;
+      font-size: 16px;
+    }
+
+    .star {
+      color: #ddd;
+    }
+
+    .star.filled {
+      color: #ffd700;
+    }
+
+    .sentence-count {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    .practice-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      width: 100%;
+      cursor: pointer;
+    }
+
+    .practice-btn:active {
+      opacity: 0.8;
+    }
+
+    .sentence-item {
+      background: white;
+      padding: 12px;
+      margin-bottom: 8px;
+      border-radius: 8px;
+      border: 1px solid #e0e0e0;
+    }
+
+    .sentence-chinese {
+      font-size: 16px;
+      color: #333;
+      margin-bottom: 4px;
+      line-height: 1.5;
+    }
+
+    .sentence-pinyin {
+      font-size: 13px;
+      color: #667eea;
+      margin-bottom: 4px;
+      font-style: italic;
+    }
+
+    .sentence-english {
+      font-size: 14px;
+      color: #666;
+    }
+
+    /* Quiz Screen Styles */
+    .quiz-container {
+      display: none;
+    }
+
+    .quiz-container.active {
+      display: block;
+    }
+
+    .quiz-header {
+      background: white;
+      padding: 16px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .quiz-progress {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    .quiz-sense {
+      font-size: 16px;
+      color: #667eea;
+      font-weight: 600;
+    }
+
+    .quiz-card {
+      background: white;
+      border-radius: 16px;
+      padding: 32px 20px;
+      margin-bottom: 20px;
+      min-height: 300px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .quiz-chinese {
+      font-size: 32px;
+      color: #333;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .quiz-pinyin {
+      font-size: 16px;
+      color: #667eea;
+      margin-bottom: 24px;
+      font-style: italic;
+    }
+
+    .quiz-answer {
+      font-size: 18px;
+      color: #666;
+      padding: 16px;
+      background: #f0f0f0;
+      border-radius: 8px;
+      display: none;
+    }
+
+    .quiz-answer.visible {
+      display: block;
+    }
+
+    .quiz-buttons {
+      display: flex;
+      gap: 12px;
+    }
+
+    .quiz-btn {
+      flex: 1;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .show-btn {
+      background: #667eea;
+      color: white;
+    }
+
+    .correct-btn {
+      background: #4caf50;
+      color: white;
+    }
+
+    .wrong-btn {
+      background: #f44336;
+      color: white;
+    }
+
+    .quiz-btn:active {
+      opacity: 0.8;
+    }
+
+    .completion-screen {
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    .completion-screen h2 {
+      font-size: 24px;
+      margin-bottom: 16px;
+    }
+
+    .completion-stats {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      margin: 20px 0;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .stat-row:last-child {
+      border-bottom: none;
+    }
+
+    .continue-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 14px 32px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .tab-nav {
+      display: flex;
+      background: white;
+      border-radius: 12px;
+      padding: 4px;
+      margin-bottom: 20px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      background: transparent;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #666;
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      background: #667eea;
+      color: white;
+    }
+
+    .content-view {
+      display: none;
+    }
+
+    .content-view.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <!-- Character Detail View -->
+  <div id="detailView" class="content-view active">
+    <div class="header">
+      <button class="back-btn" onclick="alert('← Back navigation')">← Back</button>
+      <h1>还</h1>
+      <div class="pinyin">hái / huán</div>
+    </div>
+
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="switchTab('meanings')">Meanings</button>
+      <button class="tab-btn" onclick="switchTab('sentences')">Sentences</button>
+    </div>
+
+    <!-- Meanings Tab -->
+    <div id="meaningsTab" class="content-view active">
+      <div class="section">
+        <div class="section-title">📖 Basic Meanings</div>
+        <p style="color: #666; line-height: 1.6;">
+          • still, yet<br>
+          • also, in addition<br>
+          • even more<br>
+          • return, give back
+        </p>
+      </div>
+    </div>
+
+    <!-- Sentences Tab -->
+    <div id="sentencesTab" class="content-view">
+      <div class="section">
+        <div class="section-title">📚 Sentence Examples</div>
+        <p style="color: #999; font-size: 13px; margin-bottom: 16px;">Practice sentences grouped by meaning. Track your mastery for each usage.</p>
+
+        <!-- Sense 1: still, yet -->
+        <div class="sense-card learning">
+          <div class="sense-header">
+            <div class="sense-meaning">1. still, yet (hái)</div>
+            <div class="mastery-badge">
+              <span class="star filled">⭐</span>
+              <span class="star filled">⭐</span>
+              <span class="star filled">⭐</span>
+              <span class="star">⭐</span>
+              <span class="star">⭐</span>
+            </div>
+          </div>
+          <div class="sentence-count">5 example sentences • 3/5 mastered</div>
+          <button class="practice-btn" onclick="startQuiz('still-yet')">📝 Practice This Meaning</button>
+        </div>
+
+        <!-- Sense 2: also, in addition -->
+        <div class="sense-card struggling">
+          <div class="sense-header">
+            <div class="sense-meaning">2. also, in addition (hái)</div>
+            <div class="mastery-badge">
+              <span class="star filled">⭐</span>
+              <span class="star">⭐</span>
+              <span class="star">⭐</span>
+              <span class="star">⭐</span>
+              <span class="star">⭐</span>
+            </div>
+          </div>
+          <div class="sentence-count">4 example sentences • 1/4 mastered</div>
+          <button class="practice-btn" onclick="startQuiz('also')">📝 Practice This Meaning</button>
+        </div>
+
+        <!-- Sense 3: return, give back -->
+        <div class="sense-card mastered">
+          <div class="sense-header">
+            <div class="sense-meaning">3. return, give back (huán)</div>
+            <div class="mastery-badge">
+              <span class="star filled">⭐</span>
+              <span class="star filled">⭐</span>
+              <span class="star filled">⭐</span>
+              <span class="star filled">⭐</span>
+              <span class="star filled">⭐</span>
+            </div>
+          </div>
+          <div class="sentence-count">3 example sentences • Mastered! 🎉</div>
+          <button class="practice-btn" onclick="startQuiz('return')">🔄 Review</button>
+        </div>
+      </div>
+
+      <!-- Example Sentences Preview -->
+      <div class="section">
+        <div class="section-title">Preview: "still, yet" sentences</div>
+
+        <div class="sentence-item">
+          <div class="sentence-chinese">我还在等你。</div>
+          <div class="sentence-pinyin">Wǒ hái zài děng nǐ.</div>
+          <div class="sentence-english">I'm still waiting for you.</div>
+        </div>
+
+        <div class="sentence-item">
+          <div class="sentence-chinese">他还没吃早饭。</div>
+          <div class="sentence-pinyin">Tā hái méi chī zǎofàn.</div>
+          <div class="sentence-english">He hasn't eaten breakfast yet.</div>
+        </div>
+
+        <div class="sentence-item">
+          <div class="sentence-chinese">天还很亮。</div>
+          <div class="sentence-pinyin">Tiān hái hěn liàng.</div>
+          <div class="sentence-english">It's still very bright outside.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quiz View -->
+  <div id="quizView" class="content-view">
+    <div class="quiz-header">
+      <div class="quiz-progress">Sentence 2 of 5</div>
+      <div class="quiz-sense">Practicing: "still, yet" (hái)</div>
+    </div>
+
+    <div class="quiz-card">
+      <div class="quiz-chinese">他还没吃早饭。</div>
+      <div class="quiz-pinyin">Tā hái méi chī zǎofàn.</div>
+
+      <div id="quizAnswer" class="quiz-answer">
+        He hasn't eaten breakfast yet.
+      </div>
+    </div>
+
+    <div class="quiz-buttons">
+      <button id="showBtn" class="quiz-btn show-btn" onclick="showAnswer()">Show Answer</button>
+      <button id="wrongBtn" class="quiz-btn wrong-btn" onclick="answerWrong()" style="display: none;">❌ Wrong</button>
+      <button id="correctBtn" class="quiz-btn correct-btn" onclick="answerCorrect()" style="display: none;">✓ Correct</button>
+    </div>
+  </div>
+
+  <!-- Completion View -->
+  <div id="completionView" class="content-view">
+    <div class="completion-screen">
+      <h2>🎉 Practice Complete!</h2>
+      <p style="color: #666; margin-top: 8px;">Great work on "still, yet"</p>
+
+      <div class="completion-stats">
+        <div class="stat-row">
+          <span>Sentences Reviewed:</span>
+          <strong>5</strong>
+        </div>
+        <div class="stat-row">
+          <span>Correct:</span>
+          <strong style="color: #4caf50;">4</strong>
+        </div>
+        <div class="stat-row">
+          <span>Incorrect:</span>
+          <strong style="color: #f44336;">1</strong>
+        </div>
+        <div class="stat-row">
+          <span>New Mastery Level:</span>
+          <strong style="color: #667eea;">⭐⭐⭐⭐ (4/5)</strong>
+        </div>
+      </div>
+
+      <button class="continue-btn" onclick="backToDetail()">Continue Learning</button>
+    </div>
+  </div>
+
+  <script>
+    function switchTab(tab) {
+      // Update tab buttons
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      // Update content
+      if (tab === 'meanings') {
+        document.getElementById('meaningsTab').classList.add('active');
+        document.getElementById('sentencesTab').classList.remove('active');
+      } else {
+        document.getElementById('meaningsTab').classList.remove('active');
+        document.getElementById('sentencesTab').classList.add('active');
+      }
+    }
+
+    function startQuiz(sense) {
+      document.getElementById('detailView').classList.remove('active');
+      document.getElementById('quizView').classList.add('active');
+    }
+
+    function showAnswer() {
+      document.getElementById('quizAnswer').classList.add('visible');
+      document.getElementById('showBtn').style.display = 'none';
+      document.getElementById('wrongBtn').style.display = 'block';
+      document.getElementById('correctBtn').style.display = 'block';
+    }
+
+    function answerCorrect() {
+      // Simulate next question or completion
+      document.getElementById('quizView').classList.remove('active');
+      document.getElementById('completionView').classList.add('active');
+    }
+
+    function answerWrong() {
+      // Simulate next question
+      alert('Wrong answer recorded. Moving to next sentence...');
+      resetQuiz();
+    }
+
+    function resetQuiz() {
+      document.getElementById('quizAnswer').classList.remove('visible');
+      document.getElementById('showBtn').style.display = 'block';
+      document.getElementById('wrongBtn').style.display = 'none';
+      document.getElementById('correctBtn').style.display = 'none';
+    }
+
+    function backToDetail() {
+      document.getElementById('completionView').classList.remove('active');
+      document.getElementById('detailView').classList.add('active');
+      switchToSentencesTab();
+    }
+
+    function switchToSentencesTab() {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-btn')[1].classList.add('active');
+      document.getElementById('meaningsTab').classList.remove('active');
+      document.getElementById('sentencesTab').classList.add('active');
+    }
+  </script>
+</body>
+</html>

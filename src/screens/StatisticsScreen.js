@@ -12,7 +12,7 @@ import api from '../services/api';
 import syncManager from '../services/syncManager';
 import { COLORS } from '../theme/colors';
 
-export default function StatisticsScreen() {
+export default function StatisticsScreen({ navigation }) {
   const [progressData, setProgressData] = useState(null);
   const [stats, setStats] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -103,6 +103,7 @@ export default function StatisticsScreen() {
       struggling: 0,
       learning: 0,
       good: 0,
+      untested: 0,
       totalCorrect: 0,
       totalAttempts: 0,
       dueToday: 0,
@@ -113,6 +114,7 @@ export default function StatisticsScreen() {
         learning: [],
         good: [],
         mastered: [],
+        untested: [],
       },
     };
 
@@ -124,6 +126,17 @@ export default function StatisticsScreen() {
     if (data.compoundProgress) {
       for (const char in data.compoundProgress) {
         const charProgress = data.compoundProgress[char];
+
+        // Count untested compounds (marked known but never quizzed)
+        if (charProgress.known && Array.isArray(charProgress.known)) {
+          charProgress.known.forEach(word => {
+            if (!charProgress.quizScores || !charProgress.quizScores[word]) {
+              stats.untested++;
+              stats.wordsByCategory.untested.push({ word, char, type: 'compound' });
+            }
+          });
+        }
+
         if (charProgress.quizScores) {
           for (const word in charProgress.quizScores) {
             const quizData = charProgress.quizScores[word];
@@ -139,7 +152,8 @@ export default function StatisticsScreen() {
             } else if (quizData.score >= 2) {
               stats.learning++;
               stats.wordsByCategory.learning.push({ word, char, ...quizData });
-            } else {
+            } else if ((quizData.attempts || 0) > 0) {
+              // Only count as struggling if actually attempted and failed
               stats.struggling++;
               stats.wordsByCategory.struggling.push({ word, char, ...quizData });
             }
@@ -167,6 +181,13 @@ export default function StatisticsScreen() {
     if (data.characterProgress) {
       for (const char in data.characterProgress) {
         const charData = data.characterProgress[char];
+
+        // Count untested characters (marked known but never quizzed)
+        if (charData?.known && !charData?.quizScore) {
+          stats.untested++;
+          stats.wordsByCategory.untested.push({ word: char, char, type: 'character' });
+        }
+
         if (charData.quizScore) {
           const quizData = charData.quizScore;
           stats.totalLearned++;
@@ -180,7 +201,8 @@ export default function StatisticsScreen() {
           } else if (quizData.score >= 2) {
             stats.learning++;
             stats.wordsByCategory.learning.push({ word: char, char, ...quizData });
-          } else {
+          } else if ((quizData.attempts || 0) > 0) {
+            // Only count as struggling if actually attempted and failed
             stats.struggling++;
             stats.wordsByCategory.struggling.push({ word: char, char, ...quizData });
           }
@@ -528,9 +550,8 @@ export default function StatisticsScreen() {
             <TouchableOpacity
               style={styles.startReviewButton}
               onPress={() => {
-                // Navigate to Quiz screen
-                // TODO: Add navigation
-                console.log('[STATS] Start review button pressed');
+                console.log('[STATS] Start review button pressed - navigating to Quiz');
+                navigation.navigate('Quiz');
               }}
             >
               <Text style={styles.startReviewButtonText}>
@@ -662,6 +683,13 @@ export default function StatisticsScreen() {
 
     return (
       <View>
+        {stats.untested > 0 && (
+          <View style={styles.untestedBanner}>
+            <Text style={styles.untestedText}>
+              📚 {stats.untested} items marked known but not yet tested
+            </Text>
+          </View>
+        )}
         <ProgressBar
           label="Struggling"
           count={stats.struggling}
@@ -790,6 +818,11 @@ export default function StatisticsScreen() {
           title="Struggling (0-1/5)"
           words={stats.wordsByCategory.struggling}
           color="#f44336"
+        />
+        <WordCategory
+          title="Untested (Marked Known)"
+          words={stats.wordsByCategory.untested}
+          color="#9E9E9E"
         />
       </View>
     );
@@ -1245,5 +1278,18 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  untestedBanner: {
+    backgroundColor: COLORS.mediumGray,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#9E9E9E',
+  },
+  untestedText: {
+    fontSize: 14,
+    color: COLORS.textDark,
+    fontWeight: '600',
   },
 });

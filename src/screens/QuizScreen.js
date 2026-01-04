@@ -273,6 +273,99 @@ export default function QuizScreen() {
     await startWordQuiz('audio');
   };
 
+  const startSentenceQuiz = async () => {
+    try {
+      // Load progress data to find mastered characters
+      const cachedProgress = await AsyncStorage.getItem('@progress');
+      if (!cachedProgress) {
+        Alert.alert('No Progress', 'No characters found in your progress. Mark some characters as known first!');
+        return;
+      }
+
+      const progressData = JSON.parse(cachedProgress);
+
+      // Get all characters the user has marked as known
+      const knownChars = progressData.characterProgress
+        ? Object.keys(progressData.characterProgress).filter(char =>
+            progressData.characterProgress[char]?.known
+          )
+        : [];
+
+      if (knownChars.length === 0) {
+        Alert.alert('No Characters', 'No characters found in your progress. Long-press characters in the Home tab to mark them as known!');
+        return;
+      }
+
+      // Load sentences for these characters from the API
+      const sentenceItems = [];
+
+      for (const char of knownChars.slice(0, 20)) { // Limit to first 20 characters to avoid slow loading
+        try {
+          const data = await api.getSentences(char);
+
+          if (data.success && data.senses && data.senses.length > 0) {
+            // Add sentences from each sense
+            data.senses.forEach(sense => {
+              if (sense.sentences && sense.sentences.length > 0) {
+                sense.sentences.forEach(sentence => {
+                  sentenceItems.push({
+                    type: 'sentence',
+                    character: char,
+                    senseId: sense.senseId,
+                    senseMeaning: sense.meaning,
+                    chinese: sentence.chinese,
+                    pinyin: sentence.pinyin,
+                    english: sentence.english,
+                    sentenceId: sentence.id,
+                    mastery: sense.mastery || 0,
+                  });
+                });
+              }
+            });
+          }
+        } catch (error) {
+          console.log(`[QUIZ] Could not load sentences for ${char}:`, error.message);
+        }
+      }
+
+      if (sentenceItems.length === 0) {
+        Alert.alert(
+          'No Sentences Available',
+          'No example sentences found for your known characters yet. The server may need to be configured with sentence data.'
+        );
+        return;
+      }
+
+      // Shuffle and select random sentences
+      const shuffled = sentenceItems.sort(() => Math.random() - 0.5);
+      const selectedSentences = shuffled.slice(0, Math.min(10, shuffled.length));
+
+      console.log('[QUIZ] Loaded', selectedSentences.length, 'sentences for quiz');
+
+      // Initialize quiz session
+      progressData.statistics.currentSession = {
+        startTime: Date.now(),
+        endTime: null,
+        mode: 'sentences',
+        totalItems: selectedSentences.length,
+        correctCount: 0,
+        accuracy: 0,
+        duration: 0,
+      };
+      await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
+
+      setQuiz(selectedSentences);
+      setQuizMode('sentences');
+      setCurrentIndex(0);
+      setRevealed(false);
+      setScore({ correct: 0, total: 0 });
+      answeredInSessionRef.current = new Set();
+    } catch (error) {
+      console.error('[QUIZ] Error starting sentence quiz:', error);
+      Alert.alert('Error', 'Could not start sentence quiz: ' + error.message);
+    }
+  };
+
   const startWordQuiz = async (mode = 'words') => {
     try {
       // ALWAYS use local cache first (local is source of truth)
@@ -567,7 +660,7 @@ export default function QuizScreen() {
     try {
       const currentItem = quiz[currentIndex];
       const currentWord = currentItem.word;
-      const itemType = currentItem.type; // 'character' or 'compound'
+      const itemType = currentItem.type; // 'character', 'compound', or 'sentence'
 
       const cachedProgress = await AsyncStorage.getItem('@progress');
       const progressData = cachedProgress ? JSON.parse(cachedProgress) : { characterProgress: {}, compoundProgress: {} };
@@ -580,8 +673,36 @@ export default function QuizScreen() {
         progressData.characterProgress = {};
       }
 
-      // Track progress based on item type using SM-2 algorithm
-      if (itemType === 'character') {
+      // Track progress based on item type
+      if (itemType === 'sentence') {
+        // For sentence quiz, we don't use SM-2 algorithm
+        // Instead, we'll batch results and send to API at the end
+        // Track this sentence as answered in current session
+        const sentenceKey = `${currentItem.character}-${currentItem.senseId}-${currentItem.sentenceId}`;
+        answeredInSessionRef.current.add(sentenceKey);
+
+        // Store sentence result in memory for batch submission
+        if (!progressData.sentenceResults) {
+          progressData.sentenceResults = [];
+        }
+        progressData.sentenceResults.push({
+          character: currentItem.character,
+          senseId: currentItem.senseId,
+          sentenceId: currentItem.sentenceId,
+          correct: isCorrect,
+        });
+
+        await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
+        console.log('[QUIZ] Saved sentence result for', currentItem.chinese, '- correct:', isCorrect);
+
+        // Show simple feedback for sentences
+        setFeedbackMessage({
+          quality: isCorrect ? 'Correct!' : 'Incorrect',
+          nextReview: null,
+          interval: null,
+          score: null,
+        });
+      } else if (itemType === 'character') {
         if (!progressData.characterProgress[currentWord]) {
           progressData.characterProgress[currentWord] = { known: true };
         }
@@ -950,17 +1071,59 @@ export default function QuizScreen() {
         progressData.statistics.currentSession = null;
       }
 
+      // If sentence quiz, submit results to API
+      if (quizMode === 'sentences' && progressData.sentenceResults && progressData.sentenceResults.length > 0) {
+        try {
+          // Group results by character and senseId
+          const groupedResults = {};
+          progressData.sentenceResults.forEach(result => {
+            const key = `${result.character}-${result.senseId}`;
+            if (!groupedResults[key]) {
+              groupedResults[key] = {
+                character: result.character,
+                senseId: result.senseId,
+                results: []
+              };
+            }
+            groupedResults[key].results.push({
+              sentenceId: result.sentenceId,
+              correct: result.correct
+            });
+          });
+
+          // Submit each group to the API
+          for (const key in groupedResults) {
+            const group = groupedResults[key];
+            try {
+              await api.recordPracticeSession(group.character, group.senseId, group.results);
+              console.log('[QUIZ] Submitted sentence results for', group.character, 'sense', group.senseId);
+            } catch (error) {
+              console.error('[QUIZ] Error submitting sentence results:', error);
+            }
+          }
+
+          // Clear sentence results after submission
+          progressData.sentenceResults = [];
+        } catch (error) {
+          console.error('[QUIZ] Error processing sentence results:', error);
+        }
+      }
+
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
       console.log('[QUIZ] Saved quiz session with statistics');
     } catch (error) {
       console.error('[QUIZ] Error saving quiz session:', error);
     }
 
+    const retryAction = quizMode === 'sentences' ? startSentenceQuiz :
+                       quizMode === 'audio' ? startAudioQuiz :
+                       startWordQuiz;
+
     Alert.alert(
       'Quiz Complete! 🎉',
       `You got ${finalScore} out of ${finalTotal} correct (${percentage}%)`,
       [
-        { text: 'Try Again', onPress: () => startWordQuiz() },
+        { text: 'Try Again', onPress: retryAction },
         { text: 'Done', onPress: () => setQuizMode(null) },
       ]
     );
@@ -1022,12 +1185,12 @@ export default function QuizScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.modeButton, styles.modeButtonDisabled]}
-            onPress={() => Alert.alert('Coming Soon', 'Sentence quiz will be available soon!')}
+            style={styles.modeButton}
+            onPress={() => startSentenceQuiz()}
           >
             <Text style={styles.modeIcon}>💬</Text>
             <Text style={styles.modeTitle}>Sentence Quiz</Text>
-            <Text style={styles.modeDesc}>Coming soon...</Text>
+            <Text style={styles.modeDesc}>Practice with example sentences</Text>
           </TouchableOpacity>
         </View>
 
@@ -1071,11 +1234,12 @@ export default function QuizScreen() {
   }
 
   // Determine quiz direction based on consecutive correct (progressive difficulty)
-  const direction = getQuizDirection(currentItem.quizData);
+  const direction = quizMode === 'sentences' ? 'chinese-to-english' : getQuizDirection(currentItem.quizData);
   const isReversed = direction === 'english-to-chinese';
   const isAudioMode = quizMode === 'audio';
+  const isSentenceMode = quizMode === 'sentences';
 
-  console.log('[QUIZ] 🎯 Rendering quiz for:', currentItem.word, '- direction:', direction, 'isReversed:', isReversed, 'isAudioMode:', isAudioMode);
+  console.log('[QUIZ] 🎯 Rendering quiz for:', currentItem.word || currentItem.chinese, '- mode:', quizMode, 'direction:', direction);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -1095,7 +1259,8 @@ export default function QuizScreen() {
         <View style={styles.headerRight}>
           <Text style={styles.scoreText}>{score.correct}/{score.total}</Text>
           {isAudioMode && <Text style={styles.modeBadge}>🎧</Text>}
-          {!isAudioMode && isReversed && <Text style={styles.modeBadge}>🔥</Text>}
+          {isSentenceMode && <Text style={styles.modeBadge}>💬</Text>}
+          {!isAudioMode && !isSentenceMode && isReversed && <Text style={styles.modeBadge}>🔥</Text>}
         </View>
       </View>
 
@@ -1103,7 +1268,34 @@ export default function QuizScreen() {
       <View style={styles.contentArea}>
         {/* Quiz Card */}
         <View style={styles.quizCard}>
-        {isAudioMode ? (
+        {isSentenceMode ? (
+          <>
+            {/* Sentence Mode: Show Chinese sentence, recall English */}
+            <View style={styles.sentenceHeader}>
+              <Text style={styles.characterBadge}>{currentItem.character}</Text>
+              <Text style={styles.senseMeaning}>{currentItem.senseMeaning}</Text>
+            </View>
+            <View style={styles.wordWithSpeaker}>
+              <Text style={styles.sentenceChinese}>{currentItem.chinese}</Text>
+              <TouchableOpacity
+                style={styles.speakerButton}
+                onPress={() => speakChinese(currentItem.chinese)}
+              >
+                <Text style={styles.speakerIcon}>🔊</Text>
+              </TouchableOpacity>
+            </View>
+            {currentItem.pinyin && (
+              <Text style={styles.quizPinyin}>{currentItem.pinyin}</Text>
+            )}
+
+            {revealed && (
+              <View style={styles.meaningContainer}>
+                <Text style={styles.meaningLabel}>Translation:</Text>
+                <Text style={styles.sentenceEnglish}>{currentItem.english}</Text>
+              </View>
+            )}
+          </>
+        ) : isAudioMode ? (
           <>
             {/* Audio Mode: Play audio, hide characters until revealed */}
             {!revealed ? (
@@ -1805,5 +1997,36 @@ const styles = StyleSheet.create({
     color: COLORS.textMedium,
     textAlign: 'center',
     marginTop: 10,
+  },
+  sentenceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 12,
+  },
+  characterBadge: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+  },
+  senseMeaning: {
+    fontSize: 16,
+    color: COLORS.textMedium,
+    fontStyle: 'italic',
+  },
+  sentenceChinese: {
+    fontSize: 26,
+    color: COLORS.textDark,
+    textAlign: 'center',
+    lineHeight: 38,
+    fontWeight: '500',
+  },
+  sentenceEnglish: {
+    fontSize: 18,
+    color: COLORS.textDark,
+    textAlign: 'center',
+    lineHeight: 27,
+    marginTop: 8,
   },
 });

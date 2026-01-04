@@ -1,0 +1,87 @@
+// FIX: Add character image upload and retrieval endpoints
+// TO BE APPLIED: 2026-01-04
+
+// Add these dependencies at the top of server-synology.js:
+const fs = require('fs');
+const path = require('path');
+const { promisify } = require('util');
+const writeFileAsync = promisify(fs.writeFile);
+const mkdirAsync = promisify(fs.mkdir);
+
+// Create images directory structure:
+// /volume1/web/chinese-word-map/images/characters/
+
+// Add these endpoints before app.listen():
+
+// ===== CHARACTER IMAGE UPLOAD ENDPOINT =====
+// POST /api/characters/:char/image
+app.post('/api/characters/:char/image', requireAuth, async (req, res) => {
+  try {
+    const { char } = req.params;
+    const { image } = req.body; // base64 encoded image
+
+    if (!image) {
+      return res.status(400).json({ success: false, message: 'No image data provided' });
+    }
+
+    // Check if user is admin
+    const userId = req.session.userId;
+    const result = db.exec('SELECT is_admin, can_upload_images FROM users WHERE id = ?', [userId]);
+    if (!result.length || (result[0][0] !== 1 && result[0][1] !== 1)) {
+      return res.status(403).json({ success: false, message: 'Admin permission required' });
+    }
+
+    // Create images directory if it doesn't exist
+    const imagesDir = path.join(__dirname, 'images', 'characters');
+    if (!fs.existsSync(imagesDir)) {
+      await mkdirAsync(imagesDir, { recursive: true });
+    }
+
+    // Save image as JPG
+    const filename = `${char}.jpg`;
+    const filepath = path.join(imagesDir, filename);
+
+    // Convert base64 to buffer and save
+    const imageBuffer = Buffer.from(image, 'base64');
+    await writeFileAsync(filepath, imageBuffer);
+
+    console.log(`[IMAGE] Uploaded image for character ${char} by user ${userId}`);
+
+    res.json({
+      success: true,
+      message: 'Image uploaded successfully',
+      url: `/api/characters/${encodeURIComponent(char)}/image`
+    });
+  } catch (error) {
+    console.error('[IMAGE] Upload error:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload image' });
+  }
+});
+
+// ===== CHARACTER IMAGE RETRIEVAL ENDPOINT =====
+// GET /api/characters/:char/image
+app.get('/api/characters/:char/image', (req, res) => {
+  try {
+    const { char } = req.params;
+    const filepath = path.join(__dirname, 'images', 'characters', `${char}.jpg`);
+
+    if (!fs.existsSync(filepath)) {
+      return res.status(404).json({ success: false, message: 'Image not found' });
+    }
+
+    res.sendFile(filepath);
+  } catch (error) {
+    console.error('[IMAGE] Retrieval error:', error);
+    res.status(500).json({ success: false, message: 'Failed to retrieve image' });
+  }
+});
+
+// ===== INSTALLATION INSTRUCTIONS =====
+// 1. Add the require statements at the top of server-synology.js
+// 2. Add both endpoints before app.listen()
+// 3. Restart the server:
+//    sudo pkill -9 -f 'node.*server-synology'
+//    cd /volume1/web/chinese-word-map
+//    sudo nohup /usr/local/bin/node server-synology.js > server.log 2>&1 &
+// 4. Verify the images directory is created:
+//    ls -la /volume1/web/chinese-word-map/images/characters/

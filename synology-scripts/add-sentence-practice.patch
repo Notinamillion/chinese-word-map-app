@@ -1,0 +1,255 @@
+// FIX: Add sentence practice feature with per-sense mastery tracking
+// TO BE APPLIED: 2026-01-04
+
+// ===== STEP 1: Create sentences database table =====
+// Add this after database initialization in server-synology.js:
+
+// Create sentences table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sentences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    character TEXT NOT NULL,
+    sense_id INTEGER NOT NULL DEFAULT 0,
+    sense_meaning TEXT,
+    chinese TEXT NOT NULL,
+    pinyin TEXT,
+    english TEXT NOT NULL,
+    difficulty INTEGER DEFAULT 1,
+    source TEXT DEFAULT 'tatoeba',
+    created_at INTEGER DEFAULT (strftime('%s', 'now'))
+  )
+`);
+
+// Create sentence_progress table for per-sense mastery
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sentence_progress (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    character TEXT NOT NULL,
+    sense_id INTEGER NOT NULL DEFAULT 0,
+    mastery_level INTEGER DEFAULT 0,
+    correct_count INTEGER DEFAULT 0,
+    total_attempts INTEGER DEFAULT 0,
+    last_practiced INTEGER,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    UNIQUE(user_id, character, sense_id)
+  )
+`);
+
+console.log('[DB] Sentences and sentence_progress tables initialized');
+
+// ===== STEP 2: Load sentences from Tatoeba data =====
+// Add this function after database initialization:
+
+function loadTatoebaSentences() {
+  const fs = require('fs');
+  const path = require('path');
+  const sentencesPath = path.join(__dirname, 'data', 'tatoeba-sentences.json');
+
+  if (!fs.existsSync(sentencesPath)) {
+    console.log('[DB] No tatoeba-sentences.json found, skipping sentence import');
+    return;
+  }
+
+  try {
+    const sentencesData = JSON.parse(fs.readFileSync(sentencesPath, 'utf-8'));
+
+    // Check if sentences already loaded
+    const count = db.exec('SELECT COUNT(*) as count FROM sentences');
+    if (count.length > 0 && count[0][0] > 0) {
+      console.log('[DB] Sentences already loaded, skipping import');
+      return;
+    }
+
+    let totalImported = 0;
+
+    for (const char in sentencesData) {
+      const charData = sentencesData[char];
+
+      if (charData.sentences && charData.sentences.length > 0) {
+        // Group sentences by meaning (simple approach: use first word of English translation)
+        // Or import all with sense_id = 0 and let admin categorize later
+        charData.sentences.forEach((sentence, idx) => {
+          db.exec(
+            'INSERT INTO sentences (character, sense_id, chinese, pinyin, english, difficulty) VALUES (?, ?, ?, ?, ?, ?)',
+            [char, 0, sentence.chinese, sentence.pinyin || '', sentence.english, sentence.difficulty || 1]
+          );
+          totalImported++;
+        });
+      }
+    }
+
+    console.log(`[DB] Imported ${totalImported} sentences from Tatoeba`);
+  } catch (error) {
+    console.error('[DB] Error loading Tatoeba sentences:', error);
+  }
+}
+
+// Call on server start
+loadTatoebaSentences();
+
+// ===== STEP 3: API Endpoints for Sentences =====
+
+// GET /api/sentences/:char - Get sentences for a character
+app.get('/api/sentences/:char', requireAuth, (req, res) => {
+  try {
+    const { char } = req.params;
+
+    // Get all sentences for this character
+    const sentences = db.exec(
+      'SELECT id, sense_id, sense_meaning, chinese, pinyin, english, difficulty FROM sentences WHERE character = ?',
+      [char]
+    );
+
+    // Get user's progress for each sense
+    const userId = req.session.userId;
+    const progress = db.exec(
+      'SELECT sense_id, mastery_level, correct_count, total_attempts FROM sentence_progress WHERE user_id = ? AND character = ?',
+      [userId, char]
+    );
+
+    // Format sentences grouped by sense
+    const senseMap = {};
+
+    sentences.forEach(row => {
+      const [id, senseId, senseMeaning, chinese, pinyin, english, difficulty] = row;
+
+      if (!senseMap[senseId]) {
+        senseMap[senseId] = {
+          senseId,
+          meaning: senseMeaning || 'General usage',
+          sentences: [],
+          mastery: 0,
+          correct: 0,
+          total: 0
+        };
+      }
+
+      senseMap[senseId].sentences.push({
+        id,
+        chinese,
+        pinyin,
+        english,
+        difficulty
+      });
+    });
+
+    // Add progress data
+    progress.forEach(row => {
+      const [senseId, masteryLevel, correctCount, totalAttempts] = row;
+      if (senseMap[senseId]) {
+        senseMap[senseId].mastery = masteryLevel;
+        senseMap[senseId].correct = correctCount;
+        senseMap[senseId].total = totalAttempts;
+      }
+    });
+
+    const senses = Object.values(senseMap);
+
+    res.json({
+      success: true,
+      character: char,
+      senses
+    });
+  } catch (error) {
+    console.error('[API] Get sentences error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// POST /api/sentences/practice - Record practice session
+app.post('/api/sentences/practice', requireAuth, (req, res) => {
+  try {
+    const { character, senseId, results } = req.body;
+    // results = [{ sentenceId, correct: true/false }, ...]
+
+    if (!character || senseId === undefined || !results || !Array.isArray(results)) {
+      return res.status(400).json({ success: false, message: 'Invalid request' });
+    }
+
+    const userId = req.session.userId;
+
+    // Calculate results
+    const correctCount = results.filter(r => r.correct).length;
+    const totalAttempts = results.length;
+
+    // Get current progress
+    const current = db.exec(
+      'SELECT correct_count, total_attempts, mastery_level FROM sentence_progress WHERE user_id = ? AND character = ? AND sense_id = ?',
+      [userId, character, senseId]
+    );
+
+    let newCorrect, newTotal, newMastery;
+
+    if (current.length > 0) {
+      // Update existing
+      const [oldCorrect, oldTotal, oldMastery] = current[0];
+      newCorrect = oldCorrect + correctCount;
+      newTotal = oldTotal + totalAttempts;
+
+      // Calculate new mastery (0-5 stars)
+      const accuracy = newCorrect / newTotal;
+      newMastery = Math.min(5, Math.floor(accuracy * 6)); // 0-5 stars
+
+      db.exec(
+        'UPDATE sentence_progress SET correct_count = ?, total_attempts = ?, mastery_level = ?, last_practiced = ? WHERE user_id = ? AND character = ? AND sense_id = ?',
+        [newCorrect, newTotal, newMastery, Math.floor(Date.now() / 1000), userId, character, senseId]
+      );
+    } else {
+      // Create new
+      newCorrect = correctCount;
+      newTotal = totalAttempts;
+      const accuracy = newCorrect / newTotal;
+      newMastery = Math.min(5, Math.floor(accuracy * 6));
+
+      db.exec(
+        'INSERT INTO sentence_progress (user_id, character, sense_id, correct_count, total_attempts, mastery_level, last_practiced) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [userId, character, senseId, newCorrect, newTotal, newMastery, Math.floor(Date.now() / 1000)]
+      );
+    }
+
+    res.json({
+      success: true,
+      mastery: newMastery,
+      correct: newCorrect,
+      total: newTotal
+    });
+  } catch (error) {
+    console.error('[API] Practice session error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// POST /api/sentences (admin only) - Add custom sentence
+app.post('/api/sentences', requireAuth, (req, res) => {
+  try {
+    const { character, senseId, senseMeaning, chinese, pinyin, english, difficulty } = req.body;
+
+    // Check if user is admin
+    const userId = req.session.userId;
+    const result = db.exec('SELECT is_admin, can_edit_definitions FROM users WHERE id = ?', [userId]);
+    if (!result.length || (result[0][0] !== 1 && result[0][1] !== 1)) {
+      return res.status(403).json({ success: false, message: 'Admin permission required' });
+    }
+
+    db.exec(
+      'INSERT INTO sentences (character, sense_id, sense_meaning, chinese, pinyin, english, difficulty, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [character, senseId || 0, senseMeaning || '', chinese, pinyin || '', english, difficulty || 1, 'custom']
+    );
+
+    res.json({ success: true, message: 'Sentence added' });
+  } catch (error) {
+    console.error('[API] Add sentence error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// ===== INSTALLATION INSTRUCTIONS =====
+// 1. Run fetch-tatoeba-sentences.js to get sentence data:
+//    node synology-scripts/fetch-tatoeba-sentences.js
+// 2. Upload generated tatoeba-sentences.json to Synology:
+//    pscp -P 222 synology-scripts/tatoeba-sentences.json administrator@192.168.1.222:/volume1/web/chinese-word-map/data/
+// 3. Add all code above to server-synology.js
+// 4. Restart server:
+//    sudo pkill -9 -f 'node.*server-synology'
+//    sudo nohup /usr/local/bin/node server-synology.js > server.log 2>&1 &

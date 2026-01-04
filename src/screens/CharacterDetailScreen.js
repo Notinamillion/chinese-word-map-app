@@ -9,22 +9,28 @@ import {
   Modal,
   TextInput,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
 import syncManager from '../services/syncManager';
 import { COLORS } from '../theme/colors';
 import api from '../services/api';
 
-export default function CharacterDetailScreen({ route, isAdmin }) {
+export default function CharacterDetailScreen({ route, navigation, isAdmin }) {
   const { character } = route.params;
   const [charProgress, setCharProgress] = useState(0);
   const [compoundKnownList, setCompoundKnownList] = useState({});
   const [customMeanings, setCustomMeanings] = useState(null);
   const [customCompounds, setCustomCompounds] = useState({});
   const [customImage, setCustomImage] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editedMeanings, setEditedMeanings] = useState('');
   const [editingCompound, setEditingCompound] = useState(null);
+  const [sentences, setSentences] = useState([]);
+  const [sentencesExpanded, setSentencesExpanded] = useState(false);
+  const [loadingSentences, setLoadingSentences] = useState(false);
 
   // DEBUG: Log what character data we received
   console.log('[DETAIL] Character data received:', {
@@ -45,20 +51,73 @@ export default function CharacterDetailScreen({ route, isAdmin }) {
 
   const loadCustomData = async () => {
     try {
-      // Load custom meanings and images from AsyncStorage
+      // Load custom meanings from AsyncStorage
       const customData = await AsyncStorage.getItem('@customCharacterData');
       if (customData) {
         const parsed = JSON.parse(customData);
         const charData = parsed[character.char];
         if (charData) {
           setCustomMeanings(charData.meanings);
-          setCustomImage(charData.image);
           setCustomCompounds(charData.compounds || {});
         }
+      }
+
+      // Load image from server
+      try {
+        const imageUrl = api.getCharacterImageUrl(character.char);
+        // Test if image exists by trying to fetch it
+        const response = await fetch(imageUrl);
+        if (response.ok) {
+          setCustomImage(imageUrl);
+        }
+      } catch (error) {
+        console.log('[DETAIL] No custom image for', character.char);
       }
     } catch (error) {
       console.error('[DETAIL] Error loading custom data:', error);
     }
+  };
+
+  const loadSentences = async () => {
+    if (sentences.length > 0) return; // Already loaded
+
+    try {
+      setLoadingSentences(true);
+      const data = await api.getSentences(character.char);
+
+      console.log('[DETAIL] Sentences API response:', JSON.stringify(data, null, 2));
+
+      if (data.success && data.senses) {
+        // Flatten sentences from all senses
+        const allSentences = [];
+        data.senses.forEach(sense => {
+          if (sense.sentences && sense.sentences.length > 0) {
+            sense.sentences.forEach(sentence => {
+              allSentences.push({
+                ...sentence,
+                senseId: sense.senseId,
+                senseMeaning: sense.meaning,
+                mastery: sense.mastery || 0,
+              });
+            });
+          }
+        });
+        console.log('[DETAIL] Processed sentences:', JSON.stringify(allSentences, null, 2));
+        setSentences(allSentences);
+      }
+    } catch (error) {
+      console.log('[DETAIL] Could not load sentences:', error.message);
+      // Silently fail - sentences are optional
+    } finally {
+      setLoadingSentences(false);
+    }
+  };
+
+  const toggleSentences = () => {
+    if (!sentencesExpanded && sentences.length === 0) {
+      loadSentences();
+    }
+    setSentencesExpanded(!sentencesExpanded);
   };
 
   const handleEditMeanings = () => {
@@ -92,8 +151,44 @@ export default function CharacterDetailScreen({ route, isAdmin }) {
     }
   };
 
-  const handleAddImage = () => {
-    Alert.alert('Coming Soon', 'Image upload will be available soon. This will allow you to add memory aids for characters.');
+  const handleAddImage = async () => {
+    try {
+      // Request permission
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please grant permission to access your photos');
+        return;
+      }
+
+      // Pick image from gallery
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'images',
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.7, // Compress to 70% quality
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      setUploadingImage(true);
+
+      // Upload to server
+      const imageUri = result.assets[0].uri;
+      await api.uploadCharacterImage(character.char, imageUri);
+
+      // Reload image from server
+      const imageUrl = api.getCharacterImageUrl(character.char);
+      setCustomImage(imageUrl + '?t=' + Date.now()); // Add timestamp to bypass cache
+
+      Alert.alert('Success', 'Image uploaded successfully!');
+    } catch (error) {
+      console.error('[DETAIL] Error uploading image:', error);
+      Alert.alert('Upload Failed', error.message || 'Could not upload image');
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const handleEditCompound = (compound) => {
@@ -264,8 +359,8 @@ export default function CharacterDetailScreen({ route, isAdmin }) {
     <ScrollView style={styles.container}>
       {/* Character Display */}
       <View style={styles.characterSection}>
-        <Text style={styles.character}>{character.char}</Text>
-        <Text style={styles.pinyin}>{character.pinyin}</Text>
+        <Text style={styles.character} selectable={true}>{character.char}</Text>
+        <Text style={styles.pinyin} selectable={true}>{character.pinyin}</Text>
 
         {/* Meanings - directly below pinyin */}
         <View style={{ marginTop: 20, width: '100%' }}>
@@ -281,17 +376,85 @@ export default function CharacterDetailScreen({ route, isAdmin }) {
           </View>
           {(customMeanings || character.meanings)?.length > 0 ? (
             (customMeanings || character.meanings).map((meaning, index) => (
-              <Text key={index} style={[styles.meaningText, { fontSize: 16, color: COLORS.textMedium }]}>
+              <Text key={index} style={[styles.meaningText, { fontSize: 16, color: COLORS.textMedium }]} selectable={true}>
                 • {meaning}
               </Text>
             ))
           ) : (
             <Text style={{ fontSize: 14, color: COLORS.error }}>No meanings available</Text>
           )}
+          {customImage && (
+            <View style={styles.imageContainer}>
+              <Image
+                source={{ uri: customImage }}
+                style={styles.characterImage}
+                resizeMode="contain"
+              />
+            </View>
+          )}
           {isAdmin && (
-            <TouchableOpacity onPress={handleAddImage} style={styles.addImageButton}>
-              <Text style={styles.addImageButtonText}>📷 Add Memory Image</Text>
+            <TouchableOpacity
+              onPress={handleAddImage}
+              style={styles.addImageButton}
+              disabled={uploadingImage}
+            >
+              {uploadingImage ? (
+                <ActivityIndicator color={COLORS.white} />
+              ) : (
+                <Text style={styles.addImageButtonText}>
+                  📷 {customImage ? 'Change' : 'Add'} Memory Image
+                </Text>
+              )}
             </TouchableOpacity>
+          )}
+
+          {/* Example Sentences Section */}
+          <TouchableOpacity
+            style={styles.sentencesCollapsibleHeader}
+            onPress={toggleSentences}
+          >
+            <View>
+              <Text style={styles.sentencesHeaderTitle}>📚 Example Sentences</Text>
+              <Text style={styles.sentencesHeaderSubtitle}>
+                {loadingSentences ? 'Loading...' :
+                 sentences.length > 0 ? `${sentences.length} sentences available • Tap to ${sentencesExpanded ? 'collapse' : 'expand'}` :
+                 'Tap to load sentences'}
+              </Text>
+            </View>
+            <Text style={[styles.sentencesArrow, sentencesExpanded && styles.sentencesArrowOpen]}>
+              ▶
+            </Text>
+          </TouchableOpacity>
+
+          {sentencesExpanded && sentences.length > 0 && (
+            <View style={styles.sentencesContainer}>
+              {sentences.map((sentence, index) => (
+                <View key={index} style={styles.sentenceCard}>
+                  <View style={styles.sentenceHeader}>
+                    <View style={styles.senseBadge}>
+                      <Text style={styles.senseBadgeText}>{sentence.senseMeaning}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.sentenceChinese}>
+                    {sentence.chinese}
+                  </Text>
+                  {sentence.pinyin && (
+                    <Text style={styles.sentencePinyin}>{sentence.pinyin}</Text>
+                  )}
+                  <Text style={styles.sentenceEnglish}>{sentence.english}</Text>
+                </View>
+              ))}
+
+              <TouchableOpacity
+                onPress={() => navigation.navigate('SentencePractice', {
+                  character: character.char,
+                  pinyin: character.pinyin
+                })}
+                style={styles.sentencesPracticeButton}
+              >
+                <Text style={styles.sentencesPracticeButtonText}>📝 Practice with These Sentences</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </View>
@@ -357,15 +520,15 @@ export default function CharacterDetailScreen({ route, isAdmin }) {
                   <View style={styles.compoundHeader}>
                     <View style={styles.compoundInfo}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={styles.compoundWord}>{compound.word}</Text>
+                        <Text style={styles.compoundWord} selectable={true}>{compound.word}</Text>
                         {hasCustom && (
                           <Text style={styles.customLabel}>(Custom)</Text>
                         )}
                       </View>
-                      <Text style={styles.compoundTraditional}>
+                      <Text style={styles.compoundTraditional} selectable={true}>
                         {compound.traditional}
                       </Text>
-                      <Text style={styles.compoundPinyin}>{compound.pinyin}</Text>
+                      <Text style={styles.compoundPinyin} selectable={true}>{compound.pinyin}</Text>
                     </View>
                     <View style={[
                       styles.compoundCheckbox,
@@ -377,7 +540,7 @@ export default function CharacterDetailScreen({ route, isAdmin }) {
                     </View>
                   </View>
                   {displayMeanings && displayMeanings.map((meaning, idx) => (
-                    <Text key={idx} style={styles.compoundMeaning}>
+                    <Text key={idx} style={styles.compoundMeaning} selectable={true}>
                       • {meaning}
                     </Text>
                   ))}
@@ -574,6 +737,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  imageContainer: {
+    marginTop: 15,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: COLORS.lightGray,
+  },
+  characterImage: {
+    width: '100%',
+    height: 200,
+  },
   addImageButton: {
     backgroundColor: COLORS.info,
     paddingHorizontal: 16,
@@ -586,6 +759,122 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 14,
     fontWeight: '600',
+  },
+  sentencesButton: {
+    backgroundColor: COLORS.primaryYellow,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 15,
+    alignItems: 'center',
+  },
+  sentencesButtonText: {
+    color: COLORS.textDark,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  sentencesCollapsibleHeader: {
+    backgroundColor: COLORS.white,
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: COLORS.textDark,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  sentencesHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 4,
+  },
+  sentencesHeaderSubtitle: {
+    fontSize: 13,
+    color: COLORS.textMedium,
+  },
+  sentencesArrow: {
+    fontSize: 16,
+    color: COLORS.textMedium,
+    transform: [{ rotate: '0deg' }],
+  },
+  sentencesArrowOpen: {
+    transform: [{ rotate: '90deg' }],
+  },
+  sentencesContainer: {
+    marginTop: 12,
+  },
+  sentenceCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+    shadowColor: COLORS.textDark,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  sentenceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.lightGray,
+  },
+  senseBadge: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  senseBadgeText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sentenceChinese: {
+    fontSize: 18,
+    color: COLORS.textDark,
+    marginBottom: 8,
+    lineHeight: 28,
+    fontWeight: '500',
+  },
+  sentencePinyin: {
+    fontSize: 14,
+    color: COLORS.primary,
+    marginBottom: 8,
+    fontStyle: 'italic',
+  },
+  sentenceEnglish: {
+    fontSize: 15,
+    color: COLORS.textMedium,
+    lineHeight: 22,
+  },
+  sentencesPracticeButton: {
+    backgroundColor: COLORS.primaryYellow,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 8,
+    alignItems: 'center',
+    shadowColor: COLORS.primaryYellow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  sentencesPracticeButtonText: {
+    color: COLORS.textDark,
+    fontSize: 16,
+    fontWeight: '700',
   },
   modalOverlay: {
     flex: 1,

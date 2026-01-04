@@ -22,7 +22,8 @@
       "Bash(ssh:*)",
       "Bash(node -e:*)",
       "Bash(scp:*)",
-      "Bash(pscp:*)"
+      "Bash(pscp:*)",
+      "Bash(node:*)"
     ]
   }
 }

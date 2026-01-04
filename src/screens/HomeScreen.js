@@ -17,6 +17,7 @@ export default function HomeScreen({ navigation }) {
   console.log('[HOMESCREEN] Component rendering...');
   const [characters, setCharacters] = useState([]);
   const [progress, setProgress] = useState({ characterProgress: {}, compoundProgress: {} });
+  const [customData, setCustomData] = useState({});
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -30,6 +31,12 @@ export default function HomeScreen({ navigation }) {
       // Load characters from bundled data
       const charData = require('../data/characters.json');
       setCharacters(Object.values(charData));
+
+      // Load custom character data (edited meanings)
+      const customCharData = await AsyncStorage.getItem('@customCharacterData');
+      if (customCharData) {
+        setCustomData(JSON.parse(customCharData));
+      }
 
       // Load progress from cache first
       const cachedProgress = await AsyncStorage.getItem('@progress');
@@ -95,6 +102,12 @@ export default function HomeScreen({ navigation }) {
   const renderCharacter = ({ item }) => {
     const isKnown = progress.characterProgress[item.char]?.known || false;
 
+    // Check if there's a custom meaning for this character
+    const customMeanings = customData[item.char]?.meanings;
+    const displayMeaning = customMeanings && customMeanings.length > 0
+      ? customMeanings[0]
+      : item.meanings[0];
+
     return (
       <TouchableOpacity
         style={[styles.charCard, isKnown && styles.charCardKnown]}
@@ -104,7 +117,7 @@ export default function HomeScreen({ navigation }) {
         <Text style={styles.charText}>{item.char}</Text>
         <Text style={styles.pinyinText}>{item.pinyin}</Text>
         <Text style={styles.meaningText} numberOfLines={2}>
-          {item.meanings[0]}
+          {displayMeaning}
         </Text>
         {isKnown && <Text style={styles.knownBadge}>✓</Text>}
       </TouchableOpacity>

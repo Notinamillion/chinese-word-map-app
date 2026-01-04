@@ -63,6 +63,16 @@ class APIService {
     }
   }
 
+  async forgotPassword(email) {
+    try {
+      const response = await apiClient.post('/api/auth/forgot-password', { email });
+      return response.data;
+    } catch (error) {
+      console.error('[API] Forgot password error:', error);
+      throw error;
+    }
+  }
+
   // Health check
   async checkHealth() {
     try {
@@ -149,6 +159,60 @@ class APIService {
   async getCharacters() {
     // Characters are bundled with the app
     return require('../data/characters.json');
+  }
+
+  // Character Images
+  getCharacterImageUrl(char) {
+    return `${API_BASE_URL}/api/characters/${encodeURIComponent(char)}/image`;
+  }
+
+  async uploadCharacterImage(char, imageUri) {
+    try {
+      // Read file as base64
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
+      const reader = new FileReader();
+
+      return new Promise((resolve, reject) => {
+        reader.onloadend = async () => {
+          try {
+            const base64data = reader.result.split(',')[1]; // Remove data:image/... prefix
+            const uploadResponse = await apiClient.post(
+              `/api/characters/${encodeURIComponent(char)}/image`,
+              { image: base64data },
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+              }
+            );
+            resolve(uploadResponse.data);
+          } catch (error) {
+            reject(error);
+          }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error('[API] Upload image error:', error);
+      throw error;
+    }
+  }
+
+  // Sentences
+  async getSentences(char) {
+    const response = await apiClient.get(`/api/sentences/${encodeURIComponent(char)}`);
+    return response.data;
+  }
+
+  async recordPracticeSession(character, senseId, results) {
+    const response = await apiClient.post('/api/sentences/practice', {
+      character,
+      senseId,
+      results,
+    });
+    return response.data;
   }
 }
 

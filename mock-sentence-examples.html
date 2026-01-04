@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Character Detail with Sentences - Mockup</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      border-radius: 12px;
+      color: white;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .character {
+      font-size: 80px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+
+    .pinyin {
+      font-size: 24px;
+      opacity: 0.9;
+      margin-bottom: 12px;
+    }
+
+    .meanings {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .meanings-title {
+      font-weight: 700;
+      font-size: 16px;
+      color: #333;
+      margin-bottom: 12px;
+    }
+
+    .meaning-item {
+      padding: 8px 0;
+      color: #555;
+      font-size: 15px;
+    }
+
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #333;
+      margin: 24px 0 12px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sentence-card {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      border-left: 4px solid #667eea;
+    }
+
+    .sentence-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .sense-badge {
+      background: #667eea;
+      color: white;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .sense-meaning {
+      font-size: 13px;
+      color: #666;
+      font-style: italic;
+    }
+
+    .chinese {
+      font-size: 20px;
+      color: #333;
+      margin-bottom: 8px;
+      line-height: 1.6;
+      font-weight: 500;
+    }
+
+    .highlight {
+      color: #667eea;
+      font-weight: 700;
+      background: rgba(102, 126, 234, 0.1);
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+
+    .pinyin-text {
+      font-size: 14px;
+      color: #667eea;
+      margin-bottom: 8px;
+      font-style: italic;
+    }
+
+    .english {
+      font-size: 15px;
+      color: #555;
+      line-height: 1.5;
+    }
+
+    .speaker-btn {
+      background: #667eea;
+      border: none;
+      padding: 8px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 18px;
+      margin-left: auto;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .difficulty-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 600;
+      margin-left: auto;
+    }
+
+    .difficulty-easy {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+
+    .difficulty-medium {
+      background: #fff3e0;
+      color: #e65100;
+    }
+
+    .difficulty-hard {
+      background: #ffebee;
+      color: #c62828;
+    }
+
+    .practice-button {
+      background: #ffa726;
+      color: white;
+      border: none;
+      padding: 16px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 700;
+      width: 100%;
+      margin-top: 20px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(255, 167, 38, 0.3);
+    }
+
+    .practice-button:hover {
+      background: #fb8c00;
+    }
+
+    .no-sentences {
+      background: white;
+      border-radius: 12px;
+      padding: 32px;
+      text-align: center;
+      color: #999;
+      font-size: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .collapsible-header {
+      background: white;
+      padding: 16px;
+      border-radius: 12px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .collapsible-header:hover {
+      background: #f9f9f9;
+    }
+
+    .arrow {
+      transition: transform 0.3s;
+    }
+
+    .arrow.open {
+      transform: rotate(90deg);
+    }
+
+    .sentences-container {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+    }
+
+    .sentences-container.open {
+      max-height: 2000px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Character Header -->
+  <div class="header">
+    <div class="character">的</div>
+    <div class="pinyin">de</div>
+  </div>
+
+  <!-- Meanings -->
+  <div class="meanings">
+    <div class="meanings-title">Meanings (Custom)</div>
+    <div class="meaning-item">• of, particle..</div>
+  </div>
+
+  <!-- Example Sentences Section -->
+  <div class="section-title">
+    📚 Example Sentences
+    <span style="font-size: 14px; font-weight: normal; color: #999; margin-left: auto;">
+      6 sentences
+    </span>
+  </div>
+
+  <!-- Sentence 1 - Possessive particle -->
+  <div class="sentence-card">
+    <div class="sentence-header">
+      <span class="sense-badge">Sense 1</span>
+      <span class="sense-meaning">Possessive particle</span>
+      <button class="speaker-btn">🔊</button>
+    </div>
+    <div class="chinese">
+      这是我<span class="highlight">的</span>书。
+    </div>
+    <div class="pinyin-text">
+      Zhè shì wǒ de shū.
+    </div>
+    <div class="english">
+      This is my book.
+    </div>
+  </div>
+
+  <!-- Sentence 2 - Possessive particle -->
+  <div class="sentence-card">
+    <div class="sentence-header">
+      <span class="sense-badge">Sense 1</span>
+      <span class="sense-meaning">Possessive particle</span>
+      <button class="speaker-btn">🔊</button>
+    </div>
+    <div class="chinese">
+      你<span class="highlight">的</span>朋友很好。
+    </div>
+    <div class="pinyin-text">
+      Nǐ de péngyǒu hěn hǎo.
+    </div>
+    <div class="english">
+      Your friend is very nice.
+    </div>
+  </div>
+
+  <!-- Sentence 3 - Structural particle -->
+  <div class="sentence-card">
+    <div class="sentence-header">
+      <span class="sense-badge" style="background: #ff9800;">Sense 2</span>
+      <span class="sense-meaning">Structural particle</span>
+      <button class="speaker-btn">🔊</button>
+    </div>
+    <div class="chinese">
+      红色<span class="highlight">的</span>花很漂亮。
+    </div>
+    <div class="pinyin-text">
+      Hóngsè de huā hěn piàoliang.
+    </div>
+    <div class="english">
+      The red flowers are very beautiful.
+    </div>
+  </div>
+
+  <!-- Sentence 4 - End of sentence particle -->
+  <div class="sentence-card">
+    <div class="sentence-header">
+      <span class="sense-badge" style="background: #4caf50;">Sense 3</span>
+      <span class="sense-meaning">End of sentence particle</span>
+      <button class="speaker-btn">🔊</button>
+    </div>
+    <div class="chinese">
+      是<span class="highlight">的</span>，我同意。
+    </div>
+    <div class="pinyin-text">
+      Shì de, wǒ tóngyì.
+    </div>
+    <div class="english">
+      Yes, I agree.
+    </div>
+  </div>
+
+  <!-- Sentence 5 - Structural particle (longer sentence) -->
+  <div class="sentence-card">
+    <div class="sentence-header">
+      <span class="sense-badge" style="background: #ff9800;">Sense 2</span>
+      <span class="sense-meaning">Structural particle</span>
+      <button class="speaker-btn">🔊</button>
+    </div>
+    <div class="chinese">
+      我喜欢吃<span class="highlight">的</span>东西很多。
+    </div>
+    <div class="pinyin-text">
+      Wǒ xǐhuān chī de dōngxī hěn duō.
+    </div>
+    <div class="english">
+      There are many things I like to eat.
+    </div>
+  </div>
+
+  <!-- Sentence 6 - Possessive particle (advanced) -->
+  <div class="sentence-card">
+    <div class="sentence-header">
+      <span class="sense-badge">Sense 1</span>
+      <span class="sense-meaning">Possessive particle</span>
+      <button class="speaker-btn">🔊</button>
+    </div>
+    <div class="chinese">
+      中国<span class="highlight">的</span>历史很悠久。
+    </div>
+    <div class="pinyin-text">
+      Zhōngguó de lìshǐ hěn yōujiǔ.
+    </div>
+    <div class="english">
+      China's history is very long.
+    </div>
+  </div>
+
+  <!-- Practice Button -->
+  <button class="practice-button">
+    📝 Practice with Sentences
+  </button>
+
+  <hr style="margin: 40px 0; border: none; border-top: 2px solid #eee;">
+
+  <!-- Alternative: Collapsible Version -->
+  <div style="margin-top: 40px;">
+    <h3 style="color: #333; margin-bottom: 16px;">Alternative: Collapsible Design</h3>
+
+    <div class="collapsible-header" onclick="toggleSentences()">
+      <div>
+        <div class="section-title" style="margin: 0;">
+          📚 Example Sentences
+        </div>
+        <div style="font-size: 13px; color: #999; margin-top: 4px;">
+          6 sentences available • Tap to expand
+        </div>
+      </div>
+      <div class="arrow" id="arrow">▶</div>
+    </div>
+
+    <div class="sentences-container" id="sentences">
+      <div class="sentence-card">
+        <div class="sentence-header">
+          <span class="sense-badge">Sense 1</span>
+          <span class="sense-meaning">Possessive particle</span>
+          <button class="speaker-btn">🔊</button>
+        </div>
+        <div class="chinese">
+          这是我<span class="highlight">的</span>书。
+        </div>
+        <div class="pinyin-text">
+          Zhè shì wǒ de shū.
+        </div>
+        <div class="english">
+          This is my book.
+        </div>
+      </div>
+
+      <div class="sentence-card">
+        <div class="sentence-header">
+          <span class="sense-badge">Sense 1</span>
+          <span class="sense-meaning">Possessive particle</span>
+          <button class="speaker-btn">🔊</button>
+        </div>
+        <div class="chinese">
+          你<span class="highlight">的</span>朋友很好。
+        </div>
+        <div class="pinyin-text">
+          Nǐ de péngyǒu hěn hǎo.
+        </div>
+        <div class="english">
+          Your friend is very nice.
+        </div>
+      </div>
+
+      <button class="practice-button">
+        📝 Practice with Sentences
+      </button>
+    </div>
+  </div>
+
+  <hr style="margin: 40px 0; border: none; border-top: 2px solid #eee;">
+
+  <!-- No sentences state -->
+  <div style="margin-top: 40px;">
+    <h3 style="color: #333; margin-bottom: 16px;">When No Sentences Available</h3>
+
+    <div class="section-title">
+      📚 Example Sentences
+    </div>
+
+    <div class="no-sentences">
+      <div style="font-size: 48px; margin-bottom: 12px;">📭</div>
+      <div>No example sentences available yet.</div>
+      <div style="margin-top: 8px; font-size: 13px;">
+        Sentences will appear here once the server is configured.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function toggleSentences() {
+      const container = document.getElementById('sentences');
+      const arrow = document.getElementById('arrow');
+
+      container.classList.toggle('open');
+      arrow.classList.toggle('open');
+    }
+
+    // Make speaker buttons functional
+    document.querySelectorAll('.speaker-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        alert('🔊 Would play Chinese audio here');
+      });
+    });
+
+    // Make practice buttons functional
+    document.querySelectorAll('.practice-button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        alert('📝 Would navigate to sentence practice screen');
+      });
+    });
+  </script>
+
+</body>
+</html>
