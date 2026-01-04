@@ -1539,7 +1539,7 @@ const QuizScreen = React.memo(() => {
       </View>
     </SafeAreaView>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
