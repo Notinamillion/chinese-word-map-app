@@ -73,6 +73,22 @@ class APIService {
     }
   }
 
+  async changePassword(oldPassword, newPassword) {
+    try {
+      const response = await apiClient.post('/api/auth/change-password', {
+        oldPassword,
+        newPassword,
+      });
+      return response.data;
+    } catch (error) {
+      console.error('[API] Change password error:', error);
+      if (error.response && error.response.data) {
+        throw new Error(error.response.data.message || 'Failed to change password');
+      }
+      throw error;
+    }
+  }
+
   // Health check
   async checkHealth() {
     try {

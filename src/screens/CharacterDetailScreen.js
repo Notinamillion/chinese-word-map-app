@@ -134,13 +134,18 @@ const CharacterDetailScreen = React.memo(({ route, navigation, isAdmin }) => {
     try {
       setLoadingSentences(true);
 
-      // Try to load from cache first
+      // Cache version - increment this when sentence data structure changes
+      const SENTENCE_CACHE_VERSION = 2; // Incremented to invalidate duplicate sentence caches
       const cacheKey = `@sentences_${character.char}`;
-      const cached = await AsyncStorage.getItem(cacheKey);
+      const versionKey = `@sentences_version_${character.char}`;
 
-      if (cached) {
+      const cached = await AsyncStorage.getItem(cacheKey);
+      const cachedVersion = await AsyncStorage.getItem(versionKey);
+
+      // Use cache only if version matches
+      if (cached && cachedVersion === String(SENTENCE_CACHE_VERSION)) {
         const cachedSentences = JSON.parse(cached);
-        console.log('[DETAIL] Loaded sentences from cache');
+        console.log('[DETAIL] Loaded sentences from cache (v' + SENTENCE_CACHE_VERSION + ')');
         setSentences(cachedSentences);
         setLoadingSentences(false);
         return;
@@ -165,9 +170,10 @@ const CharacterDetailScreen = React.memo(({ route, navigation, isAdmin }) => {
           }
         });
 
-        // Cache the sentences
+        // Cache the sentences with version
         await AsyncStorage.setItem(cacheKey, JSON.stringify(allSentences));
-        console.log('[DETAIL] Cached sentences for', character.char);
+        await AsyncStorage.setItem(versionKey, String(SENTENCE_CACHE_VERSION));
+        console.log('[DETAIL] Cached sentences for', character.char, '(v' + SENTENCE_CACHE_VERSION + ')');
 
         setSentences(allSentences);
       }

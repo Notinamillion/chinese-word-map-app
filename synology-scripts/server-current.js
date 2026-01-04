@@ -747,6 +747,73 @@ app.post('/api/auth/logout', function(req, res) {
     });
 });
 
+// Change password for logged-in user
+app.post('/api/auth/change-password', requireAuth, function(req, res) {
+    try {
+        const oldPassword = req.body.oldPassword;
+        const newPassword = req.body.newPassword;
+        const userId = req.userId;
+
+        if (!oldPassword || !newPassword) {
+            return res.status(400).json({
+                success: false,
+                message: 'Both old and new passwords are required'
+            });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({
+                success: false,
+                message: 'New password must be at least 6 characters'
+            });
+        }
+
+        // Get current user data
+        const userResult = db.exec('SELECT password FROM users WHERE id = ?', [userId]);
+
+        if (!userResult.length || !userResult[0].values.length) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        const currentPasswordHash = userResult[0].values[0][0];
+
+        // Verify old password
+        const isMatch = bcrypt.compareSync(oldPassword, currentPasswordHash);
+
+        if (!isMatch) {
+            return res.status(401).json({
+                success: false,
+                message: 'Current password is incorrect'
+            });
+        }
+
+        // Hash new password
+        const newPasswordHash = bcrypt.hashSync(newPassword, 10);
+
+        // Update password
+        db.exec(
+            'UPDATE users SET password = ? WHERE id = ?',
+            [newPasswordHash, userId]
+        );
+
+        console.log('[AUTH] Password changed for user ID:', userId);
+
+        res.json({
+            success: true,
+            message: 'Password changed successfully'
+        });
+    } catch (error) {
+        console.error('[AUTH] Change password error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error'
+        });
+    }
+});
+
 // Get user progress
 app.get('/api/progress', requireAuth, function(req, res) {
     try {
