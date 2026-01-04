@@ -20,9 +20,11 @@ export default function CharacterDetailScreen({ route, isAdmin }) {
   const [charProgress, setCharProgress] = useState(0);
   const [compoundKnownList, setCompoundKnownList] = useState({});
   const [customMeanings, setCustomMeanings] = useState(null);
+  const [customCompounds, setCustomCompounds] = useState({});
   const [customImage, setCustomImage] = useState(null);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editedMeanings, setEditedMeanings] = useState('');
+  const [editingCompound, setEditingCompound] = useState(null);
 
   // DEBUG: Log what character data we received
   console.log('[DETAIL] Character data received:', {
@@ -51,6 +53,7 @@ export default function CharacterDetailScreen({ route, isAdmin }) {
         if (charData) {
           setCustomMeanings(charData.meanings);
           setCustomImage(charData.image);
+          setCustomCompounds(charData.compounds || {});
         }
       }
     } catch (error) {
@@ -91,6 +94,51 @@ export default function CharacterDetailScreen({ route, isAdmin }) {
 
   const handleAddImage = () => {
     Alert.alert('Coming Soon', 'Image upload will be available soon. This will allow you to add memory aids for characters.');
+  };
+
+  const handleEditCompound = (compound) => {
+    const customMeanings = customCompounds[compound.word]?.meanings;
+    const currentMeanings = customMeanings || compound.meanings || [];
+    setEditedMeanings(currentMeanings.join('\n'));
+    setEditingCompound(compound);
+    setEditModalVisible(true);
+  };
+
+  const handleSaveCompoundMeanings = async () => {
+    try {
+      const newMeanings = editedMeanings.split('\n').filter(m => m.trim());
+
+      // Save to AsyncStorage
+      const customData = await AsyncStorage.getItem('@customCharacterData');
+      const parsed = customData ? JSON.parse(customData) : {};
+
+      if (!parsed[character.char]) {
+        parsed[character.char] = {};
+      }
+      if (!parsed[character.char].compounds) {
+        parsed[character.char].compounds = {};
+      }
+      parsed[character.char].compounds[editingCompound.word] = {
+        meanings: newMeanings
+      };
+
+      await AsyncStorage.setItem('@customCharacterData', JSON.stringify(parsed));
+
+      // Update local state
+      setCustomCompounds(prev => ({
+        ...prev,
+        [editingCompound.word]: { meanings: newMeanings }
+      }));
+
+      setEditModalVisible(false);
+      setEditingCompound(null);
+
+      // TODO: Sync to server
+      Alert.alert('Success', 'Compound meanings updated successfully');
+    } catch (error) {
+      console.error('[DETAIL] Error saving compound meanings:', error);
+      Alert.alert('Error', 'Failed to save compound meanings');
+    }
   };
 
   const loadProgress = async () => {
@@ -253,11 +301,16 @@ export default function CharacterDetailScreen({ route, isAdmin }) {
         visible={editModalVisible}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setEditModalVisible(false)}
+        onRequestClose={() => {
+          setEditModalVisible(false);
+          setEditingCompound(null);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Meanings for {character.char}</Text>
+            <Text style={styles.modalTitle}>
+              Edit Meanings for {editingCompound ? editingCompound.word : character.char}
+            </Text>
             <Text style={styles.modalHint}>Enter one meaning per line</Text>
             <TextInput
               style={styles.modalTextInput}
@@ -270,13 +323,16 @@ export default function CharacterDetailScreen({ route, isAdmin }) {
             <View style={styles.modalButtons}>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonCancel]}
-                onPress={() => setEditModalVisible(false)}
+                onPress={() => {
+                  setEditModalVisible(false);
+                  setEditingCompound(null);
+                }}
               >
                 <Text style={styles.modalButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.modalButton, styles.modalButtonSave]}
-                onPress={handleSaveMeanings}
+                onPress={editingCompound ? handleSaveCompoundMeanings : handleSaveMeanings}
               >
                 <Text style={[styles.modalButtonText, { color: COLORS.white }]}>Save</Text>
               </TouchableOpacity>
@@ -290,36 +346,53 @@ export default function CharacterDetailScreen({ route, isAdmin }) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Compound Words</Text>
           <Text style={styles.sectionHint}>Tap a word to add it to your quiz list</Text>
-          {character.compounds.map((compound, index) => (
-            <TouchableOpacity
-              key={index}
-              style={styles.compoundItem}
-              onPress={() => toggleCompoundKnown(compound.word)}
-            >
-              <View style={styles.compoundHeader}>
-                <View style={styles.compoundInfo}>
-                  <Text style={styles.compoundWord}>{compound.word}</Text>
-                  <Text style={styles.compoundTraditional}>
-                    {compound.traditional}
-                  </Text>
-                  <Text style={styles.compoundPinyin}>{compound.pinyin}</Text>
-                </View>
-                <View style={[
-                  styles.compoundCheckbox,
-                  isCompoundKnown(compound.word) && styles.compoundCheckboxChecked
-                ]}>
-                  {isCompoundKnown(compound.word) && (
-                    <Text style={styles.checkmark}>✓</Text>
-                  )}
-                </View>
+          {character.compounds.map((compound, index) => {
+            const customCompoundData = customCompounds[compound.word];
+            const displayMeanings = customCompoundData?.meanings || compound.meanings;
+            const hasCustom = !!customCompoundData?.meanings;
+
+            return (
+              <View key={index} style={styles.compoundItem}>
+                <TouchableOpacity onPress={() => toggleCompoundKnown(compound.word)}>
+                  <View style={styles.compoundHeader}>
+                    <View style={styles.compoundInfo}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={styles.compoundWord}>{compound.word}</Text>
+                        {hasCustom && (
+                          <Text style={styles.customLabel}>(Custom)</Text>
+                        )}
+                      </View>
+                      <Text style={styles.compoundTraditional}>
+                        {compound.traditional}
+                      </Text>
+                      <Text style={styles.compoundPinyin}>{compound.pinyin}</Text>
+                    </View>
+                    <View style={[
+                      styles.compoundCheckbox,
+                      isCompoundKnown(compound.word) && styles.compoundCheckboxChecked
+                    ]}>
+                      {isCompoundKnown(compound.word) && (
+                        <Text style={styles.checkmark}>✓</Text>
+                      )}
+                    </View>
+                  </View>
+                  {displayMeanings && displayMeanings.map((meaning, idx) => (
+                    <Text key={idx} style={styles.compoundMeaning}>
+                      • {meaning}
+                    </Text>
+                  ))}
+                </TouchableOpacity>
+                {isAdmin && (
+                  <TouchableOpacity
+                    onPress={() => handleEditCompound(compound)}
+                    style={styles.editCompoundButton}
+                  >
+                    <Text style={styles.editCompoundButtonText}>✏️ Edit Meanings</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-              {compound.meanings && compound.meanings.map((meaning, idx) => (
-                <Text key={idx} style={styles.compoundMeaning}>
-                  • {meaning}
-                </Text>
-              ))}
-            </TouchableOpacity>
-          ))}
+            );
+          })}
         </View>
       )}
     </ScrollView>
@@ -571,5 +644,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.textDark,
+  },
+  editCompoundButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginTop: 10,
+    alignSelf: 'flex-start',
+  },
+  editCompoundButtonText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  customLabel: {
+    fontSize: 12,
+    color: COLORS.primary,
+    fontStyle: 'italic',
   },
 });
