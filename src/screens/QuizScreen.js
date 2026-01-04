@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -183,7 +183,7 @@ async function saveSessionStatistics(currentScore, isComplete = false) {
   }
 }
 
-export default function QuizScreen() {
+const QuizScreen = React.memo(() => {
   const [quizMode, setQuizMode] = useState(null); // null | 'words' | 'sentences' | 'audio'
   const [quiz, setQuiz] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -252,22 +252,22 @@ export default function QuizScreen() {
   };
 
   // Text-to-Speech function for Chinese
-  const speakChinese = (text) => {
+  const speakChinese = useCallback((text) => {
     Speech.speak(text, {
       language: 'zh-CN', // Mandarin Chinese
       pitch: 1.0,
       rate: 0.75, // Slightly slower for learning
     });
-  };
+  }, []);
 
-  const loadCharacters = async () => {
+  const loadCharacters = useCallback(async () => {
     try {
       const charData = require('../data/characters.json');
       setCharacters(charData);
     } catch (error) {
       console.error('[QUIZ] Error loading characters:', error);
     }
-  };
+  }, []);
 
   const startAudioQuiz = async () => {
     await startWordQuiz('audio');
@@ -629,7 +629,7 @@ export default function QuizScreen() {
     }
   };
 
-  const revealAnswer = () => {
+  const revealAnswer = useCallback(() => {
     console.log('[QUIZ] 🔍 Revealing answer - currentIndex:', currentIndex);
     setRevealed(true);
     setQuizStartTime(Date.now()); // Start timing from reveal (for quality suggestion)
@@ -637,10 +637,10 @@ export default function QuizScreen() {
     // Auto-play Chinese audio when revealing answer (except in audio mode which already plays)
     if (quizMode !== 'audio' && quiz && quiz[currentIndex]) {
       setTimeout(() => {
-        speakChinese(quiz[currentIndex].word);
+        speakChinese(quiz[currentIndex].word || quiz[currentIndex].chinese);
       }, 200); // Small delay to feel natural
     }
-  };
+  }, [currentIndex, quizMode, quiz, speakChinese]);
 
   const markQuality = async (quality) => {
     console.log('[QUIZ] ⭐ Marking quality:', quality, 'at index:', currentIndex);
@@ -2030,3 +2030,5 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 });
+
+export default QuizScreen;

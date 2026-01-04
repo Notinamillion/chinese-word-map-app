@@ -28,7 +28,7 @@ export default function HomeScreen({ navigation }) {
 
   const loadData = async () => {
     try {
-      // Load characters from bundled data
+      // Load characters from bundled data (no network call needed!)
       const charData = require('../data/characters.json');
       setCharacters(Object.values(charData));
 
@@ -40,27 +40,32 @@ export default function HomeScreen({ navigation }) {
 
       // Load progress from cache first
       const cachedProgress = await AsyncStorage.getItem('@progress');
+      const lastSync = await AsyncStorage.getItem('@progress_last_sync');
+      const now = Date.now();
+
       if (cachedProgress) {
         setProgress(JSON.parse(cachedProgress));
+        setLoading(false); // Show cached data immediately
       }
 
-      // Then fetch from server if online
-      try {
-        const result = await api.getProgress();
-        console.log('[HOME] Server progress response:', {
-          hasResult: !!result,
-          resultKeys: result ? Object.keys(result) : [],
-          characterProgressCount: result?.characterProgress ? Object.keys(result.characterProgress).length : 0,
-          compoundProgressCount: result?.compoundProgress ? Object.keys(result.compoundProgress).length : 0,
-        });
-        // Server returns progress object directly
-        if (result && typeof result === 'object') {
-          setProgress(result);
-          await AsyncStorage.setItem('@progress', JSON.stringify(result));
-          console.log('[HOME] Updated progress from server');
+      // Only fetch from server if cache is older than 30 seconds
+      const shouldSync = !lastSync || (now - parseInt(lastSync)) > 30000;
+
+      if (shouldSync) {
+        try {
+          const result = await api.getProgress();
+          console.log('[HOME] Synced progress from server');
+          // Server returns progress object directly
+          if (result && typeof result === 'object') {
+            setProgress(result);
+            await AsyncStorage.setItem('@progress', JSON.stringify(result));
+            await AsyncStorage.setItem('@progress_last_sync', now.toString());
+          }
+        } catch (error) {
+          console.log('[HOME] Using cached progress (offline or error)');
         }
-      } catch (error) {
-        console.log('[HOME] Using cached progress (offline)');
+      } else {
+        console.log('[HOME] Using cached progress (fresh)');
       }
 
       setLoading(false);

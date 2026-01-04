@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   Alert,
   Modal,
@@ -17,7 +18,56 @@ import syncManager from '../services/syncManager';
 import { COLORS } from '../theme/colors';
 import api from '../services/api';
 
-export default function CharacterDetailScreen({ route, navigation, isAdmin }) {
+// Memoized compound word item component for better performance
+const CompoundWordItem = React.memo(({ compound, customCompounds, isCompoundKnown, toggleCompoundKnown, handleEditCompoundMeanings, isAdmin }) => {
+  const customCompoundData = customCompounds[compound.word];
+  const displayMeanings = customCompoundData?.meanings || compound.meanings;
+  const hasCustom = !!customCompoundData?.meanings;
+
+  return (
+    <View style={styles.compoundItem}>
+      <TouchableOpacity onPress={() => toggleCompoundKnown(compound.word)}>
+        <View style={styles.compoundHeader}>
+          <View style={styles.compoundInfo}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={styles.compoundWord} selectable={true}>{compound.word}</Text>
+              {hasCustom && (
+                <Text style={styles.customLabel}>(Custom)</Text>
+              )}
+            </View>
+            <Text style={styles.compoundTraditional} selectable={true}>
+              {compound.traditional}
+            </Text>
+            <Text style={styles.compoundPinyin} selectable={true}>{compound.pinyin}</Text>
+          </View>
+          <View style={[
+            styles.compoundCheckbox,
+            isCompoundKnown(compound.word) && styles.compoundCheckboxChecked
+          ]}>
+            {isCompoundKnown(compound.word) && (
+              <Text style={styles.checkmark}>✓</Text>
+            )}
+          </View>
+        </View>
+        {displayMeanings && displayMeanings.map((meaning, idx) => (
+          <Text key={idx} style={styles.compoundMeaning} selectable={true}>
+            • {meaning}
+          </Text>
+        ))}
+      </TouchableOpacity>
+      {isAdmin && (
+        <TouchableOpacity
+          onPress={() => handleEditCompoundMeanings(compound)}
+          style={styles.editCompoundButton}
+        >
+          <Text style={styles.editCompoundButtonText}>✏️ Edit</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+});
+
+const CharacterDetailScreen = React.memo(({ route, navigation, isAdmin }) => {
   const { character } = route.params;
   const [charProgress, setCharProgress] = useState(0);
   const [compoundKnownList, setCompoundKnownList] = useState({});
@@ -83,9 +133,21 @@ export default function CharacterDetailScreen({ route, navigation, isAdmin }) {
 
     try {
       setLoadingSentences(true);
-      const data = await api.getSentences(character.char);
 
-      console.log('[DETAIL] Sentences API response:', JSON.stringify(data, null, 2));
+      // Try to load from cache first
+      const cacheKey = `@sentences_${character.char}`;
+      const cached = await AsyncStorage.getItem(cacheKey);
+
+      if (cached) {
+        const cachedSentences = JSON.parse(cached);
+        console.log('[DETAIL] Loaded sentences from cache');
+        setSentences(cachedSentences);
+        setLoadingSentences(false);
+        return;
+      }
+
+      // If not cached, fetch from API
+      const data = await api.getSentences(character.char);
 
       if (data.success && data.senses) {
         // Flatten sentences from all senses
@@ -102,7 +164,11 @@ export default function CharacterDetailScreen({ route, navigation, isAdmin }) {
             });
           }
         });
-        console.log('[DETAIL] Processed sentences:', JSON.stringify(allSentences, null, 2));
+
+        // Cache the sentences
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(allSentences));
+        console.log('[DETAIL] Cached sentences for', character.char);
+
         setSentences(allSentences);
       }
     } catch (error) {
@@ -113,18 +179,18 @@ export default function CharacterDetailScreen({ route, navigation, isAdmin }) {
     }
   };
 
-  const toggleSentences = () => {
+  const toggleSentences = useCallback(() => {
     if (!sentencesExpanded && sentences.length === 0) {
       loadSentences();
     }
     setSentencesExpanded(!sentencesExpanded);
-  };
+  }, [sentencesExpanded, sentences.length]);
 
-  const handleEditMeanings = () => {
+  const handleEditMeanings = useCallback(() => {
     const currentMeanings = customMeanings || character.meanings || [];
     setEditedMeanings(currentMeanings.join('\n'));
     setEditModalVisible(true);
-  };
+  }, [customMeanings, character.meanings]);
 
   const handleSaveMeanings = async () => {
     try {
@@ -504,63 +570,38 @@ export default function CharacterDetailScreen({ route, navigation, isAdmin }) {
         </View>
       </Modal>
 
-      {/* Compounds */}
+      {/* Compounds - Virtualized List */}
       {character.compounds && character.compounds.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Compound Words</Text>
           <Text style={styles.sectionHint}>Tap a word to add it to your quiz list</Text>
-          {character.compounds.map((compound, index) => {
-            const customCompoundData = customCompounds[compound.word];
-            const displayMeanings = customCompoundData?.meanings || compound.meanings;
-            const hasCustom = !!customCompoundData?.meanings;
-
-            return (
-              <View key={index} style={styles.compoundItem}>
-                <TouchableOpacity onPress={() => toggleCompoundKnown(compound.word)}>
-                  <View style={styles.compoundHeader}>
-                    <View style={styles.compoundInfo}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Text style={styles.compoundWord} selectable={true}>{compound.word}</Text>
-                        {hasCustom && (
-                          <Text style={styles.customLabel}>(Custom)</Text>
-                        )}
-                      </View>
-                      <Text style={styles.compoundTraditional} selectable={true}>
-                        {compound.traditional}
-                      </Text>
-                      <Text style={styles.compoundPinyin} selectable={true}>{compound.pinyin}</Text>
-                    </View>
-                    <View style={[
-                      styles.compoundCheckbox,
-                      isCompoundKnown(compound.word) && styles.compoundCheckboxChecked
-                    ]}>
-                      {isCompoundKnown(compound.word) && (
-                        <Text style={styles.checkmark}>✓</Text>
-                      )}
-                    </View>
-                  </View>
-                  {displayMeanings && displayMeanings.map((meaning, idx) => (
-                    <Text key={idx} style={styles.compoundMeaning} selectable={true}>
-                      • {meaning}
-                    </Text>
-                  ))}
-                </TouchableOpacity>
-                {isAdmin && (
-                  <TouchableOpacity
-                    onPress={() => handleEditCompound(compound)}
-                    style={styles.editCompoundButton}
-                  >
-                    <Text style={styles.editCompoundButtonText}>✏️ Edit Meanings</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            );
-          })}
+          <FlatList
+            data={character.compounds}
+            renderItem={({ item }) => (
+              <CompoundWordItem
+                compound={item}
+                customCompounds={customCompounds}
+                isCompoundKnown={isCompoundKnown}
+                toggleCompoundKnown={toggleCompoundKnown}
+                handleEditCompoundMeanings={handleEditCompound}
+                isAdmin={isAdmin}
+              />
+            )}
+            keyExtractor={(item, index) => `${item.word}-${index}`}
+            initialNumToRender={20}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+            removeClippedSubviews={true}
+            scrollEnabled={false}
+            nestedScrollEnabled={false}
+          />
         </View>
       )}
     </ScrollView>
   );
-}
+});
+
+export default CharacterDetailScreen;
 
 const styles = StyleSheet.create({
   container: {
