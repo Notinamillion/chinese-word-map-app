@@ -193,7 +193,9 @@ const QuizScreen = React.memo(() => {
   const [quizStartTime, setQuizStartTime] = useState(null); // Track time for quality suggestion
   const [feedbackMessage, setFeedbackMessage] = useState(null); // Show feedback after rating
   const [dueCount, setDueCount] = useState(0); // Count of due review cards
-  const answeredInSessionRef = useRef(new Set()); // Track recently answered words (using ref for sync updates)
+  const answeredInSessionRef = useRef(new Set()); // Track words that passed (quality >= 3)
+  const learningQueueRef = useRef([]); // Anki-style learning queue for failed cards
+  // learningQueueRef format: [{ word, item, step, cardsUntilReview }, ...]
 
   useEffect(() => {
     loadCharacters();
@@ -495,15 +497,31 @@ const QuizScreen = React.memo(() => {
       const categorized = quizItems.map(item => {
         const quizData = item.quizData;
 
-        // New items (never reviewed)
+        // For Audio/Sentence quiz: Only show cards that have been reviewed in Word quiz at least once
+        if (mode === 'audio' || mode === 'sentences') {
+          if (!quizData || !quizData.lastReviewedWord) {
+            // Not yet reviewed in word quiz - skip
+            return { ...item, category: 'not-available', dueStatus: 'not-available' };
+          }
+        }
+
+        // New items (never reviewed in THIS mode)
         if (!quizData || !quizData.nextReview) {
           return { ...item, category: 'new', dueStatus: 'new' };
         }
 
         const nextReview = quizData.nextReview;
-        const lastReviewed = quizData.lastReviewed;
 
-        // Check if already reviewed today
+        // Check if already reviewed today IN THIS SPECIFIC MODE
+        let lastReviewed;
+        if (mode === 'audio') {
+          lastReviewed = quizData.lastReviewedAudio;
+        } else if (mode === 'sentences') {
+          lastReviewed = quizData.lastReviewedSentence;
+        } else {
+          lastReviewed = quizData.lastReviewedWord || quizData.lastReviewed; // Fallback to legacy
+        }
+
         const reviewedToday = lastReviewed && lastReviewed >= todayStart;
 
         // Overdue
@@ -616,6 +634,7 @@ const QuizScreen = React.memo(() => {
       setRevealed(false);
       setScore({ correct: 0, total: 0 });
       answeredInSessionRef.current = new Set(); // Reset answered tracking for new session
+      learningQueueRef.current = []; // Reset learning queue for new session
 
       // For audio quiz, auto-play the first word
       if (mode === 'audio' && selectedItems.length > 0) {
@@ -710,10 +729,11 @@ const QuizScreen = React.memo(() => {
           progressData.characterProgress[currentWord].quizScore = null;
         }
 
-        // Use SM-2 algorithm to calculate next review
+        // Use SM-2 algorithm to calculate next review (pass quiz mode for separate tracking)
         const updatedQuizData = calculateNextReview(
           progressData.characterProgress[currentWord].quizScore,
-          quality
+          quality,
+          quizMode
         );
         progressData.characterProgress[currentWord].quizScore = updatedQuizData;
       } else {
@@ -729,10 +749,11 @@ const QuizScreen = React.memo(() => {
           progressData.compoundProgress[char].quizScores[currentWord] = null;
         }
 
-        // Use SM-2 algorithm to calculate next review
+        // Use SM-2 algorithm to calculate next review (pass quiz mode for separate tracking)
         const updatedQuizData = calculateNextReview(
           progressData.compoundProgress[char].quizScores[currentWord],
-          quality
+          quality,
+          quizMode
         );
         progressData.compoundProgress[char].quizScores[currentWord] = updatedQuizData;
       }
@@ -746,9 +767,31 @@ const QuizScreen = React.memo(() => {
         data: progressData
       });
 
-      // Track this word as answered in current session (using ref for immediate sync update)
-      answeredInSessionRef.current.add(currentWord);
-      console.log('[QUIZ] 📝 Added to answered set:', currentWord, '- Set size:', answeredInSessionRef.current.size);
+      // ANKI-STYLE LEARNING QUEUE:
+      // Only mark as "answered" if PASSED (quality >= 3)
+      // Failed cards (quality < 3) go to learning queue and will be re-asked
+      if (isCorrect) {
+        answeredInSessionRef.current.add(currentWord);
+        console.log('[QUIZ] ✅ Passed! Added to answered set:', currentWord);
+      } else {
+        // Failed card - add to learning queue
+        const existingLearning = learningQueueRef.current.find(l => l.word === currentWord);
+        if (existingLearning) {
+          // Already in learning - increment step
+          existingLearning.step++;
+          existingLearning.cardsUntilReview = existingLearning.step === 1 ? 10 : 20; // 5 cards → 10 cards → 20 cards
+          console.log('[QUIZ] ❌ Failed again! Step', existingLearning.step, '- will review after', existingLearning.cardsUntilReview, 'cards');
+        } else {
+          // First failure - add to learning queue
+          learningQueueRef.current.push({
+            word: currentWord,
+            item: currentItem,
+            step: 0,
+            cardsUntilReview: 5, // Show again after 5 cards
+          });
+          console.log('[QUIZ] ❌ Failed! Added to learning queue - will review after 5 cards');
+        }
+      }
 
       // Auto-save session statistics every 10 questions
       if (newScore.total > 0 && newScore.total % 10 === 0) {
@@ -788,25 +831,66 @@ const QuizScreen = React.memo(() => {
           // Clear feedback (revealed was already reset when marking quality)
           setFeedbackMessage(null);
 
+          // ANKI-STYLE: Decrement learning queue counters and insert due cards
+          const newQuiz = [...quiz];
+          const dueCards = [];
+
+          learningQueueRef.current = learningQueueRef.current.map(learningCard => {
+            learningCard.cardsUntilReview--;
+            if (learningCard.cardsUntilReview <= 0) {
+              dueCards.push(learningCard);
+              return null; // Remove from learning queue
+            }
+            return learningCard;
+          }).filter(Boolean); // Remove nulls
+
+          // Insert due learning cards right after current position
+          // This ensures they appear soon, even if we only have a few cards left
+          if (dueCards.length > 0) {
+            console.log('[QUIZ] 🔄 Re-inserting', dueCards.length, 'learning cards after position', currentIndex);
+            // Insert right after current card so they come up next
+            const insertPosition = currentIndex + 1;
+            dueCards.forEach((learningCard, i) => {
+              newQuiz.splice(insertPosition + i, 0, learningCard.item);
+            });
+            setQuiz(newQuiz);
+          }
+
           // Find next unanswered question in the quiz array
           let nextIndex = currentIndex + 1;
-          while (nextIndex < quiz.length && answeredInSessionRef.current.has(quiz[nextIndex].word)) {
-            console.log('[QUIZ] ⏩ Skipping already answered:', quiz[nextIndex].word);
+          while (nextIndex < newQuiz.length && answeredInSessionRef.current.has(newQuiz[nextIndex].word)) {
+            console.log('[QUIZ] ⏩ Skipping already answered:', newQuiz[nextIndex].word);
             nextIndex++;
           }
 
-          if (nextIndex < quiz.length) {
+          if (nextIndex < newQuiz.length) {
             console.log('[QUIZ] ⏭️ Moving to next question:', nextIndex);
             setCurrentIndex(nextIndex);
 
             // Auto-play audio for next question in audio mode
             if (quizMode === 'audio') {
               setTimeout(() => {
-                speakChinese(quiz[nextIndex].word);
+                speakChinese(newQuiz[nextIndex].word);
               }, 300);
             }
           } else {
-            // End of current batch - load more questions
+            // End of current batch - check if there are learning cards left
+            if (learningQueueRef.current.length > 0) {
+              console.log('[QUIZ] 📚 Still', learningQueueRef.current.length, 'cards in learning queue - loading more');
+              // Load more questions to create space for learning cards
+              const hasMore = await loadNextBatch();
+              if (!hasMore && learningQueueRef.current.length > 0) {
+                // No more new cards but still have learning cards - force insert them
+                console.log('[QUIZ] ⚠️ No more new cards - force inserting remaining learning cards');
+                const remainingLearning = learningQueueRef.current.map(l => l.item);
+                setQuiz([...newQuiz, ...remainingLearning]);
+                learningQueueRef.current = []; // Clear learning queue
+                setCurrentIndex(currentIndex + 1);
+                return;
+              }
+            }
+
+            // Try to load more questions
             const hasMore = await loadNextBatch();
             if (hasMore) {
               // Find first unanswered in new batch

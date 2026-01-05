@@ -22,9 +22,10 @@
  *   - 2: Wrong, but remembered upon seeing answer
  *   - 1: Wrong, barely remembered
  *   - 0: Complete blackout, no recall
+ * @param {string} mode - Quiz mode ('words', 'audio', or 'sentences')
  * @returns {Object} Updated quiz data with new interval and nextReview
  */
-export function calculateNextReview(quizData, quality) {
+export function calculateNextReview(quizData, quality, mode = 'words') {
   // Initialize default values if this is the first review
   const data = quizData || {
     score: 0, // 0-5 performance score
@@ -59,21 +60,41 @@ export function calculateNextReview(quizData, quality) {
     // Higher quality = easier word = longer intervals
     data.easiness = Math.max(1.3, data.easiness + (0.1 - (5 - quality) * 0.08));
   } else {
-    // Quality < 3 means failed recall
+    // Quality < 3 means failed recall (LAPSE)
     data.wrong++;
     data.score = Math.max(0, data.score - 1); // Decrement score, floor at 0
     data.consecutiveCorrect = 0; // Reset streak
 
-    // Reset to short interval for difficult cards
-    data.interval = 1;
+    // Anki-style lapse handling:
+    // If this card was previously learned (interval > 1), reduce interval instead of resetting
+    // This prevents mature cards from going all the way back to 1 day
+    if (data.interval > 1 && data.correct > 0) {
+      // Lapse: Reduce interval by 50%, but minimum 1 day
+      data.interval = Math.max(1, Math.floor(data.interval * 0.5));
+      console.log('[SM-2] Lapse detected - reducing interval to', data.interval, 'days');
+    } else {
+      // New card failure: Reset to 1 day
+      data.interval = 1;
+    }
 
     // Make card easier (increase future intervals)
     data.easiness = Math.max(1.3, data.easiness - 0.2);
   }
 
-  // Set review timestamps
-  data.lastReviewed = Date.now();
-  data.nextReview = Date.now() + data.interval * 24 * 60 * 60 * 1000;
+  // Set review timestamps - separate by quiz mode for independent tracking
+  const now = Date.now();
+
+  if (mode === 'words') {
+    data.lastReviewedWord = now;
+  } else if (mode === 'audio') {
+    data.lastReviewedAudio = now;
+  } else if (mode === 'sentences') {
+    data.lastReviewedSentence = now;
+  }
+
+  // Keep legacy lastReviewed for backwards compatibility
+  data.lastReviewed = now;
+  data.nextReview = now + data.interval * 24 * 60 * 60 * 1000;
 
   return data;
 }
