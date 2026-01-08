@@ -454,6 +454,14 @@ export default function StatisticsScreen({ navigation }) {
         </View>
       </View>
 
+      {/* Quiz History Button */}
+      <TouchableOpacity
+        style={styles.historyButton}
+        onPress={() => navigation.navigate('QuizHistory')}
+      >
+        <Text style={styles.historyButtonText}>📊 View Quiz History</Text>
+      </TouchableOpacity>
+
       {/* Due Today Section */}
       {(() => {
         const { overdue, dueToday, newItems } = getDueItems();
@@ -1291,5 +1299,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.textDark,
     fontWeight: '600',
+  },
+  historyButton: {
+    backgroundColor: COLORS.primary,
+    marginHorizontal: 20,
+    marginTop: 10,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  historyButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

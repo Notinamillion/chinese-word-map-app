@@ -12,6 +12,7 @@ import CharacterDetailScreen from './src/screens/CharacterDetailScreen';
 import SentencePracticeScreen from './src/screens/SentencePracticeScreen';
 import QuizScreen from './src/screens/QuizScreen';
 import StatisticsScreen from './src/screens/StatisticsScreen';
+import QuizHistoryScreen from './src/screens/QuizHistoryScreen';
 import { COLORS } from './src/theme/colors';
 import HomeIcon from './src/components/icons/HomeIcon';
 import QuizIcon from './src/components/icons/QuizIcon';
@@ -54,6 +55,36 @@ function HomeStack({ isAdmin }) {
         name="SentencePractice"
         component={SentencePracticeScreen}
         options={{ title: 'Sentence Practice', headerShown: false }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+// Statistics Stack Navigator
+function StatisticsStack() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: COLORS.white,
+          borderBottomColor: COLORS.primaryLight,
+          borderBottomWidth: 1,
+        },
+        headerTintColor: COLORS.primary,
+        headerTitleStyle: {
+          fontWeight: '700',
+        },
+      }}
+    >
+      <Stack.Screen
+        name="StatisticsList"
+        component={StatisticsScreen}
+        options={{ title: 'Statistics' }}
+      />
+      <Stack.Screen
+        name="QuizHistory"
+        component={QuizHistoryScreen}
+        options={{ title: 'Quiz History' }}
       />
     </Stack.Navigator>
   );
@@ -260,12 +291,13 @@ export default function App() {
 
           <Tab.Screen
             name="Statistics"
-            component={StatisticsScreen}
+            component={StatisticsStack}
             options={{
               tabBarLabel: 'Statistics',
               tabBarIcon: ({ color, focused }) => (
                 <StatsIcon size={26} color={color} filled={focused} />
               ),
+              headerShown: false,
             }}
           />
 

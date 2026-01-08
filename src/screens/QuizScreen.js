@@ -197,6 +197,7 @@ const QuizScreen = React.memo(() => {
   const answeredInSessionRef = useRef(new Set()); // Track words that passed (quality >= 3)
   const learningQueueRef = useRef([]); // Anki-style learning queue for failed cards
   // learningQueueRef format: [{ word, item, step, cardsUntilReview }, ...]
+  const advanceTimeoutRef = useRef(null); // Track pending auto-advance timeout to prevent race conditions
 
   useEffect(() => {
     loadCharacters();
@@ -903,7 +904,14 @@ const QuizScreen = React.memo(() => {
       });
 
       // Auto-advance after showing feedback
-      setTimeout(() => {
+      // Cancel any pending auto-advance to prevent race conditions
+      if (advanceTimeoutRef.current) {
+        clearTimeout(advanceTimeoutRef.current);
+        advanceTimeoutRef.current = null;
+      }
+
+      advanceTimeoutRef.current = setTimeout(() => {
+        advanceTimeoutRef.current = null; // Clear ref once timeout fires
         const advanceToNext = async () => {
           console.log('[QUIZ] ⏭️ Auto-advancing - clearing feedback');
 
