@@ -193,6 +193,7 @@ const QuizScreen = React.memo(() => {
   const [quizStartTime, setQuizStartTime] = useState(null); // Track time for quality suggestion
   const [feedbackMessage, setFeedbackMessage] = useState(null); // Show feedback after rating
   const [dueCount, setDueCount] = useState(0); // Count of due review cards
+  const [practiceMode, setPracticeMode] = useState(false); // FIX 3: Practice mode bypasses "reviewed today" filter
   const answeredInSessionRef = useRef(new Set()); // Track words that passed (quality >= 3)
   const learningQueueRef = useRef([]); // Anki-style learning queue for failed cards
   // learningQueueRef format: [{ word, item, step, cardsUntilReview }, ...]
@@ -298,17 +299,23 @@ const QuizScreen = React.memo(() => {
         return;
       }
 
-      // Load sentences for these characters from the API
+      // FIX 4: Track which characters have sentences for better error messages
       const sentenceItems = [];
+      const checkedChars = [];
+      const charsWithSentences = [];
+      const charsWithoutSentences = [];
 
       for (const char of knownChars.slice(0, 20)) { // Limit to first 20 characters to avoid slow loading
+        checkedChars.push(char);
         try {
           const data = await api.getSentences(char);
 
           if (data.success && data.senses && data.senses.length > 0) {
+            let hasAnySentence = false;
             // Add sentences from each sense
             data.senses.forEach(sense => {
               if (sense.sentences && sense.sentences.length > 0) {
+                hasAnySentence = true;
                 sense.sentences.forEach(sentence => {
                   sentenceItems.push({
                     type: 'sentence',
@@ -324,16 +331,29 @@ const QuizScreen = React.memo(() => {
                 });
               }
             });
+            if (hasAnySentence) {
+              charsWithSentences.push(char);
+            } else {
+              charsWithoutSentences.push(char);
+            }
+          } else {
+            charsWithoutSentences.push(char);
           }
         } catch (error) {
           console.log(`[QUIZ] Could not load sentences for ${char}:`, error.message);
+          charsWithoutSentences.push(char);
         }
       }
 
+      // FIX 4: Better error message showing which characters were checked
       if (sentenceItems.length === 0) {
         Alert.alert(
           'No Sentences Available',
-          'No example sentences found for your known characters yet. The server may need to be configured with sentence data.'
+          `Checked ${checkedChars.length} characters:\n\n` +
+          `✅ Characters with sentences: ${charsWithSentences.length > 0 ? charsWithSentences.join(', ') : 'None'}\n\n` +
+          `❌ Characters without sentences: ${charsWithoutSentences.join(', ')}\n\n` +
+          `Total known characters: ${knownChars.length}\n\n` +
+          `The server may need to be configured with sentence data for these characters.`
         );
         return;
       }
@@ -497,8 +517,8 @@ const QuizScreen = React.memo(() => {
       const categorized = quizItems.map(item => {
         const quizData = item.quizData;
 
-        // For Audio/Sentence quiz: Only show cards that have been reviewed in Word quiz at least once
-        if (mode === 'audio' || mode === 'sentences') {
+        // For Audio/Sentence quiz: Only show cards that have been reviewed in Word quiz at least once (unless practice mode)
+        if (!practiceMode && (mode === 'audio' || mode === 'sentences')) {
           if (!quizData || !quizData.lastReviewedWord) {
             // Not yet reviewed in word quiz - skip
             return { ...item, category: 'not-available', dueStatus: 'not-available' };
@@ -523,6 +543,26 @@ const QuizScreen = React.memo(() => {
         }
 
         const reviewedToday = lastReviewed && lastReviewed >= todayStart;
+
+        // FIX 3: In practice mode, ignore "reviewed today" filter
+        if (practiceMode && reviewedToday) {
+          // Treat as if not reviewed today
+          if (now >= nextReview) {
+            return {
+              ...item,
+              category: 'overdue',
+              dueStatus: 'overdue',
+              daysOverdue: Math.floor((now - nextReview) / (24 * 60 * 60 * 1000))
+            };
+          }
+          if (nextReview <= today) {
+            return {
+              ...item,
+              category: 'due-today',
+              dueStatus: 'due-today'
+            };
+          }
+        }
 
         // Overdue
         if (now >= nextReview) {
@@ -590,9 +630,13 @@ const QuizScreen = React.memo(() => {
             {
               text: 'Practice Anyway',
               onPress: () => {
-                // Restart with all items (practice mode)
-                console.log('[QUIZ] User chose to practice anyway');
-                // TODO: Set practice mode flag
+                // FIX 3: Restart with all items (practice mode)
+                console.log('[QUIZ] User chose to practice anyway - enabling practice mode');
+                setPracticeMode(true);
+                // Restart quiz in practice mode
+                setTimeout(() => {
+                  startWordQuiz(mode);
+                }, 100);
               }
             }
           ]
@@ -828,9 +872,7 @@ const QuizScreen = React.memo(() => {
         const advanceToNext = async () => {
           console.log('[QUIZ] ⏭️ Auto-advancing - clearing feedback');
 
-          // Clear feedback (revealed was already reset when marking quality)
-          setFeedbackMessage(null);
-
+          // FIX 1: Calculate learning queue insertions BEFORE advancing to prevent card flashing
           // ANKI-STYLE: Decrement learning queue counters and insert due cards
           const newQuiz = [...quiz];
           const dueCards = [];
@@ -865,6 +907,9 @@ const QuizScreen = React.memo(() => {
 
           if (nextIndex < newQuiz.length) {
             console.log('[QUIZ] ⏭️ Moving to next question:', nextIndex);
+
+            // Clear feedback AFTER calculating next index to prevent flashing
+            setFeedbackMessage(null);
             setCurrentIndex(nextIndex);
 
             // Auto-play audio for next question in audio mode
@@ -885,6 +930,7 @@ const QuizScreen = React.memo(() => {
                 const remainingLearning = learningQueueRef.current.map(l => l.item);
                 setQuiz([...newQuiz, ...remainingLearning]);
                 learningQueueRef.current = []; // Clear learning queue
+                setFeedbackMessage(null);
                 setCurrentIndex(currentIndex + 1);
                 return;
               }
@@ -902,6 +948,7 @@ const QuizScreen = React.memo(() => {
               if (nextIndex < quiz.length) {
                 // IMPORTANT: Reset revealed BEFORE changing index
                 setRevealed(false);
+                setFeedbackMessage(null);
                 setCurrentIndex(nextIndex);
 
                 // Auto-play audio for next question in audio mode
@@ -915,6 +962,12 @@ const QuizScreen = React.memo(() => {
                 finishQuiz(newScore);
               }
             } else {
+              // FIX 2: Check learning queue before showing "all caught up"
+              if (learningQueueRef.current.length > 0) {
+                // Still have learning cards - don't finish yet
+                console.log('[QUIZ] ⚠️ Still have learning cards, continuing...');
+                return;
+              }
               // No more items available, finish quiz
               finishQuiz(newScore);
             }
