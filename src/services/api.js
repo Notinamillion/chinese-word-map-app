@@ -230,6 +230,45 @@ class APIService {
     });
     return response.data;
   }
+
+  // Quiz History (Audit Logging)
+  async logQuizAttempt(data) {
+    try {
+      const response = await apiClient.post('/api/quiz-history', data);
+      return response.data;
+    } catch (error) {
+      console.error('[API] Log quiz attempt error:', error);
+      // Don't throw - logging is non-critical, should not block quiz flow
+    }
+  }
+
+  async getQuizHistory(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.limit) params.append('limit', filters.limit);
+    if (filters.offset) params.append('offset', filters.offset);
+    if (filters.word) params.append('word', filters.word);
+    if (filters.mode) params.append('mode', filters.mode);
+    if (filters.sessionId) params.append('sessionId', filters.sessionId);
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
+
+    const response = await apiClient.get(`/api/quiz-history?${params.toString()}`);
+    return response.data;
+  }
+
+  async exportQuizHistory(filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.limit) params.append('limit', filters.limit);
+    if (filters.word) params.append('word', filters.word);
+    if (filters.mode) params.append('mode', filters.mode);
+    if (filters.startDate) params.append('startDate', filters.startDate);
+    if (filters.endDate) params.append('endDate', filters.endDate);
+
+    const response = await apiClient.get(`/api/quiz-history/export?${params.toString()}`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  }
 }
 
 export default new APIService();

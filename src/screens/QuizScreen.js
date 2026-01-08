@@ -736,6 +736,9 @@ const QuizScreen = React.memo(() => {
         progressData.characterProgress = {};
       }
 
+      // Variable to store old quiz data before SM-2 calculation (for audit logging)
+      let oldQuizData = null;
+
       // Track progress based on item type
       if (itemType === 'sentence') {
         // For sentence quiz, we don't use SM-2 algorithm
@@ -773,6 +776,9 @@ const QuizScreen = React.memo(() => {
           progressData.characterProgress[currentWord].quizScore = null;
         }
 
+        // Store old data BEFORE SM-2 calculation for audit logging
+        oldQuizData = progressData.characterProgress[currentWord].quizScore;
+
         // Use SM-2 algorithm to calculate next review (pass quiz mode for separate tracking)
         const updatedQuizData = calculateNextReview(
           progressData.characterProgress[currentWord].quizScore,
@@ -793,6 +799,9 @@ const QuizScreen = React.memo(() => {
           progressData.compoundProgress[char].quizScores[currentWord] = null;
         }
 
+        // Store old data BEFORE SM-2 calculation for audit logging
+        oldQuizData = progressData.compoundProgress[char].quizScores[currentWord];
+
         // Use SM-2 algorithm to calculate next review (pass quiz mode for separate tracking)
         const updatedQuizData = calculateNextReview(
           progressData.compoundProgress[char].quizScores[currentWord],
@@ -810,6 +819,32 @@ const QuizScreen = React.memo(() => {
         type: 'SAVE_PROGRESS',
         data: progressData
       });
+
+      // AUDIT LOGGING: Log quiz attempt to server (non-blocking)
+      if (itemType !== 'sentence') {
+        const updatedQuizData = itemType === 'character'
+          ? progressData.characterProgress[currentWord].quizScore
+          : progressData.compoundProgress[currentItem.char].quizScores[currentWord];
+
+        const sessionId = progressData.statistics?.currentSession?.startTime
+          ? String(progressData.statistics.currentSession.startTime)
+          : String(Date.now());
+
+        api.logQuizAttempt({
+          word: currentWord,
+          wordType: itemType,
+          quizMode: quizMode,
+          quality: quality,
+          isCorrect: isCorrect,
+          intervalBefore: oldQuizData?.interval || 0,
+          intervalAfter: updatedQuizData?.interval || 0,
+          easinessBefore: oldQuizData?.easiness || 2.5,
+          easinessAfter: updatedQuizData?.easiness || 2.5,
+          scoreBefore: oldQuizData?.score || 0,
+          scoreAfter: updatedQuizData?.score || 0,
+          sessionId: sessionId
+        });
+      }
 
       // ANKI-STYLE LEARNING QUEUE:
       // Only mark as "answered" if PASSED (quality >= 3)

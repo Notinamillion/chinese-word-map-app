@@ -185,7 +185,33 @@ async function initDatabase() {
         )
     `);
 
-    console.log('[DB] Sentences and sentence_progress tables initialized');
+    // Create quiz_history table for audit logging
+    db.run(`
+        CREATE TABLE IF NOT EXISTS quiz_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            word TEXT NOT NULL,
+            word_type TEXT NOT NULL,
+            quiz_mode TEXT NOT NULL,
+            quality INTEGER NOT NULL,
+            is_correct INTEGER NOT NULL,
+            interval_before INTEGER,
+            interval_after INTEGER,
+            easiness_before REAL,
+            easiness_after REAL,
+            score_before INTEGER,
+            score_after INTEGER,
+            session_id TEXT,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    `);
+
+    // Create indexes for quiz_history
+    db.run('CREATE INDEX IF NOT EXISTS idx_quiz_history_user ON quiz_history(user_id, created_at DESC)');
+    db.run('CREATE INDEX IF NOT EXISTS idx_quiz_history_session ON quiz_history(session_id)');
+
+    console.log('[DB] Sentences, sentence_progress, and quiz_history tables initialized');
 
     // Save database
     saveDatabase();
@@ -2201,6 +2227,234 @@ app.post('/api/sentences', requireAuth, function(req, res) {
         res.json({ success: true, message: 'Sentence added' });
     } catch (error) {
         console.error('[API] Add sentence error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// ============================================================================
+// QUIZ HISTORY ENDPOINTS - Audit logging for quiz attempts
+// ============================================================================
+
+// POST /api/quiz-history - Log a quiz attempt
+app.post('/api/quiz-history', requireAuth, function(req, res) {
+    try {
+        const userId = req.session.userId;
+        const {
+            word,
+            wordType,
+            quizMode,
+            quality,
+            isCorrect,
+            intervalBefore,
+            intervalAfter,
+            easinessBefore,
+            easinessAfter,
+            scoreBefore,
+            scoreAfter,
+            sessionId
+        } = req.body;
+
+        // Validate required fields
+        if (!word || !wordType || !quizMode || quality === undefined) {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required fields: word, wordType, quizMode, quality'
+            });
+        }
+
+        // Insert quiz history record
+        db.run(
+            `INSERT INTO quiz_history (
+                user_id, word, word_type, quiz_mode, quality, is_correct,
+                interval_before, interval_after, easiness_before, easiness_after,
+                score_before, score_after, session_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                userId,
+                word,
+                wordType,
+                quizMode,
+                quality,
+                isCorrect ? 1 : 0,
+                intervalBefore || null,
+                intervalAfter || null,
+                easinessBefore || null,
+                easinessAfter || null,
+                scoreBefore || null,
+                scoreAfter || null,
+                sessionId || null,
+                Date.now()
+            ]
+        );
+
+        saveDatabase();
+
+        // Get the ID of the inserted record
+        const result = db.exec('SELECT last_insert_rowid() as id');
+        const id = result[0].values[0][0];
+
+        res.json({ success: true, id: id });
+    } catch (error) {
+        console.error('[API] Quiz history log error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// GET /api/quiz-history - Get quiz history with filters
+app.get('/api/quiz-history', requireAuth, function(req, res) {
+    try {
+        const userId = req.session.userId;
+        const {
+            limit = 100,
+            offset = 0,
+            word,
+            mode,
+            sessionId,
+            startDate,
+            endDate
+        } = req.query;
+
+        // Build query with filters
+        let query = 'SELECT * FROM quiz_history WHERE user_id = ?';
+        const params = [userId];
+
+        if (word) {
+            query += ' AND word = ?';
+            params.push(word);
+        }
+
+        if (mode) {
+            query += ' AND quiz_mode = ?';
+            params.push(mode);
+        }
+
+        if (sessionId) {
+            query += ' AND session_id = ?';
+            params.push(sessionId);
+        }
+
+        if (startDate) {
+            query += ' AND created_at >= ?';
+            params.push(parseInt(startDate));
+        }
+
+        if (endDate) {
+            query += ' AND created_at <= ?';
+            params.push(parseInt(endDate));
+        }
+
+        // Get total count
+        const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as total');
+        const countResult = db.exec(countQuery, params);
+        const total = countResult.length > 0 ? countResult[0].values[0][0] : 0;
+
+        // Add ordering and pagination
+        query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+        params.push(parseInt(limit), parseInt(offset));
+
+        const result = db.exec(query, params);
+
+        // Format results
+        const history = [];
+        if (result.length > 0 && result[0].values.length > 0) {
+            const columns = result[0].columns;
+            result[0].values.forEach(row => {
+                const record = {};
+                columns.forEach((col, idx) => {
+                    // Convert snake_case to camelCase for JSON response
+                    const camelCol = col.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
+                    record[camelCol] = row[idx];
+                });
+                history.push(record);
+            });
+        }
+
+        res.json({
+            success: true,
+            history: history,
+            total: total,
+            limit: parseInt(limit),
+            offset: parseInt(offset)
+        });
+    } catch (error) {
+        console.error('[API] Quiz history get error:', error);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// GET /api/quiz-history/export - Export quiz history as CSV
+app.get('/api/quiz-history/export', requireAuth, function(req, res) {
+    try {
+        const userId = req.session.userId;
+        const { word, mode, startDate, endDate, limit = 10000 } = req.query;
+
+        // Build query with filters (same as GET endpoint)
+        let query = 'SELECT * FROM quiz_history WHERE user_id = ?';
+        const params = [userId];
+
+        if (word) {
+            query += ' AND word = ?';
+            params.push(word);
+        }
+
+        if (mode) {
+            query += ' AND quiz_mode = ?';
+            params.push(mode);
+        }
+
+        if (startDate) {
+            query += ' AND created_at >= ?';
+            params.push(parseInt(startDate));
+        }
+
+        if (endDate) {
+            query += ' AND created_at <= ?';
+            params.push(parseInt(endDate));
+        }
+
+        query += ' ORDER BY created_at DESC LIMIT ?';
+        params.push(parseInt(limit));
+
+        const result = db.exec(query, params);
+
+        // Build CSV
+        const csvRows = [];
+        csvRows.push('Date,Time,Word,Type,Mode,Quality,Correct,Interval Before,Interval After,Easiness Before,Easiness After,Score Before,Score After,Session ID');
+
+        if (result.length > 0 && result[0].values.length > 0) {
+            result[0].values.forEach(row => {
+                const createdAt = new Date(row[14]); // created_at is column index 14
+                const date = createdAt.toLocaleDateString('en-US');
+                const time = createdAt.toLocaleTimeString('en-US');
+                const isCorrect = row[6] === 1 ? 'Yes' : 'No'; // is_correct is column index 6
+
+                csvRows.push([
+                    date,
+                    time,
+                    `"${row[2]}"`, // word
+                    row[3], // word_type
+                    row[4], // quiz_mode
+                    row[5], // quality
+                    isCorrect,
+                    row[7] || '', // interval_before
+                    row[8] || '', // interval_after
+                    row[9] || '', // easiness_before
+                    row[10] || '', // easiness_after
+                    row[11] || '', // score_before
+                    row[12] || '', // score_after
+                    row[13] || '' // session_id
+                ].join(','));
+            });
+        }
+
+        const csv = csvRows.join('\n');
+        const filename = `quiz-history-${new Date().toISOString().split('T')[0]}.csv`;
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(csv);
+    } catch (error) {
+        console.error('[API] Quiz history export error:', error);
         res.status(500).json({ success: false, message: 'Server error' });
     }
 });
