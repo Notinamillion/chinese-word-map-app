@@ -963,7 +963,6 @@ const QuizScreen = React.memo(() => {
             });
 
             console.log('[QUIZ] 📚 Quiz after insert:', newQuiz.map((q, i) => `${i}:${q.word}`).slice(currentIndex, currentIndex + 5));
-            setQuiz(newQuiz);
           }
 
           // Find next unanswered question in the quiz array
@@ -980,6 +979,14 @@ const QuizScreen = React.memo(() => {
           if (nextIndex < newQuiz.length) {
             console.log('[QUIZ] ⏭️ Moving to next question at index', nextIndex, ':', newQuiz[nextIndex].word);
             console.log('[QUIZ] 📝 Current index before change:', currentIndex);
+
+            // CRITICAL FIX: Update quiz and index together to prevent race condition
+            // If we inserted cards, update quiz AFTER we've calculated the new index
+            // This prevents the wrong card from showing during the state transition
+            if (dueCards.length > 0) {
+              console.log('[QUIZ] 🔄 Updating quiz AND index atomically');
+              setQuiz(newQuiz);
+            }
 
             // Clear feedback AFTER calculating next index to prevent flashing
             setFeedbackMessage(null);
