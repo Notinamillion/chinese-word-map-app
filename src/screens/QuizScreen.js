@@ -209,14 +209,17 @@ const QuizScreen = React.memo(() => {
     };
   }, []);
 
-  // Debug state changes
+  // Debug state changes - track card switches
   useEffect(() => {
-    console.log('[QUIZ] 📊 State changed:', {
-      currentIndex,
-      revealed,
-      hasFeedback: !!feedbackMessage,
-      quizLength: quiz?.length || 0,
-    });
+    const currentCard = quiz?.[currentIndex];
+    console.log('[QUIZ] 📊 ===== STATE CHANGED =====');
+    console.log('[QUIZ] 📍 Current Index:', currentIndex);
+    console.log('[QUIZ] 🎴 Current Card:', currentCard?.word);
+    console.log('[QUIZ] 👁️ Revealed:', revealed);
+    console.log('[QUIZ] 💬 Has Feedback:', !!feedbackMessage);
+    console.log('[QUIZ] 📚 Quiz Length:', quiz?.length || 0);
+    console.log('[QUIZ] 🔢 Next 3 cards:', quiz?.slice(currentIndex + 1, currentIndex + 4).map(q => q.word));
+    console.log('[QUIZ] ===========================');
   }, [currentIndex, revealed, feedbackMessage]);
 
   const updateDueCount = async () => {
@@ -927,43 +930,62 @@ const QuizScreen = React.memo(() => {
 
           // FIX 1: Calculate learning queue insertions BEFORE advancing to prevent card flashing
           // ANKI-STYLE: Decrement learning queue counters and insert due cards
+          console.log('[QUIZ] 📋 Learning queue before decrement:', learningQueueRef.current.map(l => `${l.word}(${l.cardsUntilReview})`));
+
           const newQuiz = [...quiz];
           const dueCards = [];
 
           learningQueueRef.current = learningQueueRef.current.map(learningCard => {
             learningCard.cardsUntilReview--;
+            console.log(`[QUIZ] 📉 ${learningCard.word}: ${learningCard.cardsUntilReview + 1} → ${learningCard.cardsUntilReview} cards until review`);
             if (learningCard.cardsUntilReview <= 0) {
+              console.log(`[QUIZ] ⏰ ${learningCard.word} is now DUE for review!`);
               dueCards.push(learningCard);
               return null; // Remove from learning queue
             }
             return learningCard;
           }).filter(Boolean); // Remove nulls
 
+          console.log('[QUIZ] 📋 Learning queue after decrement:', learningQueueRef.current.map(l => `${l.word}(${l.cardsUntilReview})`));
+
           // Insert due learning cards right after current position
           // This ensures they appear soon, even if we only have a few cards left
           if (dueCards.length > 0) {
-            console.log('[QUIZ] 🔄 Re-inserting', dueCards.length, 'learning cards after position', currentIndex);
+            console.log('[QUIZ] 🔄 Re-inserting', dueCards.length, 'learning cards:', dueCards.map(d => d.word));
+            console.log('[QUIZ] 📍 Current index:', currentIndex, 'Current card:', quiz[currentIndex]?.word);
+            console.log('[QUIZ] 📚 Quiz before insert:', newQuiz.map((q, i) => `${i}:${q.word}`).slice(currentIndex, currentIndex + 5));
+
             // Insert right after current card so they come up next
             const insertPosition = currentIndex + 1;
             dueCards.forEach((learningCard, i) => {
               newQuiz.splice(insertPosition + i, 0, learningCard.item);
+              console.log(`[QUIZ] ➕ Inserted ${learningCard.word} at position ${insertPosition + i}`);
             });
+
+            console.log('[QUIZ] 📚 Quiz after insert:', newQuiz.map((q, i) => `${i}:${q.word}`).slice(currentIndex, currentIndex + 5));
             setQuiz(newQuiz);
           }
 
           // Find next unanswered question in the quiz array
+          console.log('[QUIZ] 🔍 Finding next unanswered card...');
+          console.log('[QUIZ] 📍 Starting from index:', currentIndex + 1);
+          console.log('[QUIZ] ✅ Answered set:', Array.from(answeredInSessionRef.current));
+
           let nextIndex = currentIndex + 1;
           while (nextIndex < newQuiz.length && answeredInSessionRef.current.has(newQuiz[nextIndex].word)) {
-            console.log('[QUIZ] ⏩ Skipping already answered:', newQuiz[nextIndex].word);
+            console.log('[QUIZ] ⏩ Skipping already answered:', newQuiz[nextIndex].word, 'at index', nextIndex);
             nextIndex++;
           }
 
           if (nextIndex < newQuiz.length) {
-            console.log('[QUIZ] ⏭️ Moving to next question:', nextIndex);
+            console.log('[QUIZ] ⏭️ Moving to next question at index', nextIndex, ':', newQuiz[nextIndex].word);
+            console.log('[QUIZ] 📝 Current index before change:', currentIndex);
 
             // Clear feedback AFTER calculating next index to prevent flashing
             setFeedbackMessage(null);
             setCurrentIndex(nextIndex);
+
+            console.log('[QUIZ] ✅ Index changed to:', nextIndex);
 
             // Auto-play audio for next question in audio mode
             if (quizMode === 'audio') {
