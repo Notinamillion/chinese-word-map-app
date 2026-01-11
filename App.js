@@ -14,6 +14,8 @@ import QuizScreen from './src/screens/QuizScreen';
 import StatisticsScreen from './src/screens/StatisticsScreen';
 import QuizHistoryScreen from './src/screens/QuizHistoryScreen';
 import WordStatsScreen from './src/screens/WordStatsScreen';
+import AddCharacterScreen from './src/screens/AddCharacterScreen';
+import AddCompoundScreen from './src/screens/AddCompoundScreen';
 import { COLORS } from './src/theme/colors';
 import HomeIcon from './src/components/icons/HomeIcon';
 import QuizIcon from './src/components/icons/QuizIcon';
@@ -41,9 +43,10 @@ function HomeStack({ isAdmin }) {
     >
       <Stack.Screen
         name="HomeList"
-        component={HomeScreen}
         options={{ title: 'ZhongMap' }}
-      />
+      >
+        {(props) => <HomeScreen {...props} isAdmin={isAdmin} />}
+      </Stack.Screen>
       <Stack.Screen
         name="CharacterDetail"
         options={({ route }) => ({
@@ -56,6 +59,16 @@ function HomeStack({ isAdmin }) {
         name="SentencePractice"
         component={SentencePracticeScreen}
         options={{ title: 'Sentence Practice', headerShown: false }}
+      />
+      <Stack.Screen
+        name="AddCharacter"
+        component={AddCharacterScreen}
+        options={{ title: 'Add Character' }}
+      />
+      <Stack.Screen
+        name="AddCompound"
+        component={AddCompoundScreen}
+        options={{ title: 'Add Compound' }}
       />
     </Stack.Navigator>
   );

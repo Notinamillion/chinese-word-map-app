@@ -269,6 +269,16 @@ class APIService {
     });
     return response.data;
   }
+
+  async addCharacter(data) {
+    const response = await apiClient.post('/api/admin/characters', data);
+    return response.data;
+  }
+
+  async addCompound(data) {
+    const response = await apiClient.post('/api/admin/compounds', data);
+    return response.data;
+  }
 }
 
 export default new APIService();

@@ -13,8 +13,8 @@ import api from '../services/api';
 import syncManager from '../services/syncManager';
 import { COLORS } from '../theme/colors';
 
-export default function HomeScreen({ navigation }) {
-  console.log('[HOMESCREEN] Component rendering...');
+export default function HomeScreen({ navigation, isAdmin }) {
+  console.log('[HOMESCREEN] Component rendering...', 'isAdmin:', isAdmin);
   const [characters, setCharacters] = useState([]);
   const [progress, setProgress] = useState({ characterProgress: {}, compoundProgress: {} });
   const [customData, setCustomData] = useState({});
@@ -150,6 +150,23 @@ export default function HomeScreen({ navigation }) {
         onChangeText={setSearch}
       />
 
+      {isAdmin && (
+        <View style={styles.adminButtons}>
+          <TouchableOpacity
+            style={styles.adminButton}
+            onPress={() => navigation.navigate('AddCharacter')}
+          >
+            <Text style={styles.adminButtonText}>+ Add Character</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.adminButton}
+            onPress={() => navigation.navigate('AddCompound')}
+          >
+            <Text style={styles.adminButtonText}>+ Add Compound</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <FlatList
         data={filteredCharacters}
         renderItem={renderCharacter}
@@ -247,5 +264,29 @@ const styles = StyleSheet.create({
     right: 8,
     fontSize: 24,
     color: COLORS.success,
+  },
+  adminButtons: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 10,
+  },
+  adminButton: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  adminButtonText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
