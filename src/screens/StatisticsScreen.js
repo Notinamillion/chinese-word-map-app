@@ -462,6 +462,14 @@ export default function StatisticsScreen({ navigation }) {
         <Text style={styles.historyButtonText}>📊 View Quiz History</Text>
       </TouchableOpacity>
 
+      {/* Word Stats Button */}
+      <TouchableOpacity
+        style={styles.wordStatsButton}
+        onPress={() => navigation.navigate('WordStats')}
+      >
+        <Text style={styles.wordStatsButtonText}>📚 All Word Statistics</Text>
+      </TouchableOpacity>
+
       {/* Due Today Section */}
       {(() => {
         const { overdue, dueToday, newItems } = getDueItems();
@@ -1314,6 +1322,24 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   historyButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  wordStatsButton: {
+    backgroundColor: COLORS.success,
+    marginHorizontal: 20,
+    marginTop: 10,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: COLORS.success,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  wordStatsButtonText: {
     color: COLORS.white,
     fontSize: 16,
     fontWeight: 'bold',

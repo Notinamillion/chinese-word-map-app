@@ -265,7 +265,7 @@ class APIService {
     if (filters.endDate) params.append('endDate', filters.endDate);
 
     const response = await apiClient.get(`/api/quiz-history/export?${params.toString()}`, {
-      responseType: 'blob'
+      responseType: 'text'
     });
     return response.data;
   }

@@ -7,8 +7,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  Share,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import api from '../services/api';
 
 const COLORS = {
@@ -86,8 +87,6 @@ const QuizHistoryScreen = ({ navigation }) => {
 
   const exportToCSV = async () => {
     try {
-      Alert.alert('Export', 'Exporting quiz history...');
-
       let startDate = null;
       if (filter === 'today') {
         startDate = new Date().setHours(0, 0, 0, 0);
@@ -100,22 +99,32 @@ const QuizHistoryScreen = ({ navigation }) => {
       const filters = {};
       if (startDate) filters.startDate = startDate;
 
-      const blob = await api.exportQuizHistory(filters);
+      // Get CSV data from server
+      const csvData = await api.exportQuizHistory(filters);
 
-      // Convert blob to base64 for sharing
-      const reader = new FileReader();
-      reader.readAsDataURL(blob);
-      reader.onloadend = async () => {
-        const base64data = reader.result;
-        await Share.share({
-          message: 'Quiz History Export',
-          title: 'quiz-history.csv',
-          url: base64data,
+      // Create filename with current date
+      const filename = `quiz-history-${new Date().toISOString().split('T')[0]}.csv`;
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
+
+      // Write CSV to file
+      await FileSystem.writeAsStringAsync(fileUri, csvData, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      // Share the file
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'text/csv',
+          dialogTitle: 'Save Quiz History CSV',
+          UTI: 'public.comma-separated-values-text',
         });
-      };
+        Alert.alert('Success', `Exported ${filename}`);
+      } else {
+        Alert.alert('Error', 'Sharing is not available on this device');
+      }
     } catch (error) {
       console.error('[HISTORY] Error exporting:', error);
-      Alert.alert('Error', 'Failed to export quiz history');
+      Alert.alert('Error', `Failed to export: ${error.message}`);
     }
   };
 

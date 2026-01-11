@@ -39,6 +39,12 @@ export function calculateNextReview(quizData, quality, mode = 'words') {
     nextReview: null,
   };
 
+  // Store old values for logging
+  const oldInterval = data.interval;
+  const oldEasiness = data.easiness;
+  const oldScore = data.score;
+  const oldCorrect = data.correct;
+
   data.attempts++;
 
   // Quality >= 3 is considered "correct" (recalled successfully)
@@ -107,6 +113,15 @@ export function calculateNextReview(quizData, quality, mode = 'words') {
   // Keep legacy lastReviewed for backwards compatibility
   data.lastReviewed = now;
   data.nextReview = now + data.interval * 24 * 60 * 60 * 1000;
+
+  // Log SM-2 calculation for verification
+  console.log('[SM-2] Calculation:');
+  console.log(`  Quality: ${quality} (${isCorrect ? 'CORRECT' : 'WRONG'})`);
+  console.log(`  Correct count: ${oldCorrect} → ${data.correct}`);
+  console.log(`  Score: ${oldScore} → ${data.score}`);
+  console.log(`  Interval: ${oldInterval}d → ${data.interval}d`);
+  console.log(`  Easiness: ${oldEasiness.toFixed(2)} → ${data.easiness.toFixed(2)}`);
+  console.log(`  Next review: ${formatNextReview(data.nextReview)}`);
 
   return data;
 }

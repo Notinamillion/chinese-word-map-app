@@ -813,7 +813,16 @@ const QuizScreen = React.memo(() => {
       }
 
       await AsyncStorage.setItem('@progress', JSON.stringify(progressData));
-      console.log('[QUIZ] Saved result for', currentWord, `(${itemType})`, '- correct:', isCorrect);
+
+      const updatedQuizData = itemType === 'character'
+        ? progressData.characterProgress[currentWord].quizScore
+        : progressData.compoundProgress[currentItem.char].quizScores[currentWord];
+
+      console.log('[QUIZ] ✅ Saved result for:', currentWord, `(${itemType})`);
+      console.log(`  Correct: ${isCorrect}, Quality: ${quality}`);
+      console.log(`  Interval: ${oldQuizData?.interval || 0}d → ${updatedQuizData?.interval}d`);
+      console.log(`  Score: ${oldQuizData?.score || 0} → ${updatedQuizData?.score}`);
+      console.log(`  Correct count: ${oldQuizData?.correct || 0} → ${updatedQuizData?.correct}`);
 
       // Queue progress sync to server
       await syncManager.queueAction({

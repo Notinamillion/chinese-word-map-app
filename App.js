@@ -13,6 +13,7 @@ import SentencePracticeScreen from './src/screens/SentencePracticeScreen';
 import QuizScreen from './src/screens/QuizScreen';
 import StatisticsScreen from './src/screens/StatisticsScreen';
 import QuizHistoryScreen from './src/screens/QuizHistoryScreen';
+import WordStatsScreen from './src/screens/WordStatsScreen';
 import { COLORS } from './src/theme/colors';
 import HomeIcon from './src/components/icons/HomeIcon';
 import QuizIcon from './src/components/icons/QuizIcon';
@@ -85,6 +86,11 @@ function StatisticsStack() {
         name="QuizHistory"
         component={QuizHistoryScreen}
         options={{ title: 'Quiz History' }}
+      />
+      <Stack.Screen
+        name="WordStats"
+        component={WordStatsScreen}
+        options={{ title: 'Word Statistics' }}
       />
     </Stack.Navigator>
   );
