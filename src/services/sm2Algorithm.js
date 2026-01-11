@@ -52,9 +52,21 @@ export function calculateNextReview(quizData, quality, mode = 'words') {
     // Track consecutive correct answers for progressive difficulty
     data.consecutiveCorrect = (data.consecutiveCorrect || 0) + 1;
 
-    // SM-2 Algorithm: Increase interval based on easiness
-    // First review: 1 day, Second: interval * easiness, etc.
-    data.interval = Math.ceil(data.interval * data.easiness);
+    // SM-2 Algorithm: Increase interval based on repetition count
+    // Standard SM-2 intervals:
+    // - First review: 1 day
+    // - Second review: 6 days
+    // - Third+ review: previous_interval * easiness
+    if (data.correct === 1) {
+      // First correct answer: schedule for 1 day
+      data.interval = 1;
+    } else if (data.correct === 2) {
+      // Second correct answer: schedule for 6 days
+      data.interval = 6;
+    } else {
+      // Third+ correct answer: multiply by easiness factor
+      data.interval = Math.ceil(data.interval * data.easiness);
+    }
 
     // Adjust easiness based on quality
     // Higher quality = easier word = longer intervals
