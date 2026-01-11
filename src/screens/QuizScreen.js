@@ -198,6 +198,7 @@ const QuizScreen = React.memo(() => {
   const learningQueueRef = useRef([]); // Anki-style learning queue for failed cards
   // learningQueueRef format: [{ word, item, step, cardsUntilReview }, ...]
   const advanceTimeoutRef = useRef(null); // Track pending auto-advance timeout to prevent race conditions
+  const finishingQuizRef = useRef(false); // Prevent multiple quiz completion dialogs
 
   useEffect(() => {
     loadCharacters();
@@ -1186,6 +1187,13 @@ const QuizScreen = React.memo(() => {
   };
 
   const finishQuiz = async (finalScoreObj) => {
+    // Prevent multiple quiz completion dialogs
+    if (finishingQuizRef.current) {
+      console.log('[QUIZ] Already finishing quiz, ignoring duplicate call');
+      return;
+    }
+    finishingQuizRef.current = true;
+
     const finalScore = finalScoreObj.correct;
     const finalTotal = finalScoreObj.total;
     const percentage = Math.round((finalScore / finalTotal) * 100);
@@ -1312,8 +1320,14 @@ const QuizScreen = React.memo(() => {
       'Quiz Complete! 🎉',
       `You got ${finalScore} out of ${finalTotal} correct (${percentage}%)`,
       [
-        { text: 'Try Again', onPress: retryAction },
-        { text: 'Done', onPress: () => setQuizMode(null) },
+        { text: 'Try Again', onPress: () => {
+          finishingQuizRef.current = false;
+          retryAction();
+        }},
+        { text: 'Done', onPress: () => {
+          finishingQuizRef.current = false;
+          setQuizMode(null);
+        }},
       ]
     );
   };

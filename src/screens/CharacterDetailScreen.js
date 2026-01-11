@@ -152,9 +152,11 @@ const CharacterDetailScreen = React.memo(({ route, navigation, isAdmin }) => {
       }
 
       // If not cached, fetch from API
+      console.log('[DETAIL] Fetching sentences from API for:', character.char);
       const data = await api.getSentences(character.char);
+      console.log('[DETAIL] API response:', data);
 
-      if (data.success && data.senses) {
+      if (data && data.success && data.senses) {
         // Flatten sentences from all senses
         const allSentences = [];
         data.senses.forEach(sense => {
@@ -170,16 +172,22 @@ const CharacterDetailScreen = React.memo(({ route, navigation, isAdmin }) => {
           }
         });
 
+        console.log('[DETAIL] Loaded', allSentences.length, 'sentences for', character.char);
+
         // Cache the sentences with version
         await AsyncStorage.setItem(cacheKey, JSON.stringify(allSentences));
         await AsyncStorage.setItem(versionKey, String(SENTENCE_CACHE_VERSION));
         console.log('[DETAIL] Cached sentences for', character.char, '(v' + SENTENCE_CACHE_VERSION + ')');
 
         setSentences(allSentences);
+      } else {
+        console.log('[DETAIL] No sentences found or invalid response for', character.char);
+        setSentences([]);
       }
     } catch (error) {
-      console.log('[DETAIL] Could not load sentences:', error.message);
-      // Silently fail - sentences are optional
+      console.error('[DETAIL] Error loading sentences:', error);
+      console.error('[DETAIL] Error details:', error.message, error.stack);
+      setSentences([]);
     } finally {
       setLoadingSentences(false);
     }
