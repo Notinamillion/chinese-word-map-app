@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
 import syncManager from '../services/syncManager';
@@ -19,9 +20,12 @@ export default function StatisticsScreen({ navigation }) {
   const [activeTab, setActiveTab] = useState('overview'); // overview | activity | words
   const [syncStatus, setSyncStatus] = useState('loading'); // loading | synced | pending | error
 
-  useEffect(() => {
-    loadStatistics();
-  }, []);
+  // Reload statistics whenever screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadStatistics();
+    }, [])
+  );
 
   const loadStatistics = async () => {
     try {
