@@ -180,7 +180,7 @@ Now update the app to use HTTPS instead of local IP.
 
 ### Edit API Configuration
 
-**File**: `C:\Users\s.bateman\ChineseWordMapApp\src\services\api.js`
+**File**: `C:\Users\s.bateman\Programs\ChineseWordMapApp\src\services\api.js`
 
 Change line 7:
 ```javascript
@@ -193,7 +193,7 @@ const API_BASE_URL = 'https://bateman.synology.me';
 
 ### Update App Version
 
-**File**: `C:\Users\s.bateman\ChineseWordMapApp\app.json`
+**File**: `C:\Users\s.bateman\Programs\ChineseWordMapApp\app.json`
 
 Change versionCode:
 ```json
@@ -202,7 +202,7 @@ Change versionCode:
 
 ### Commit Changes
 ```bash
-cd C:\Users\s.bateman\ChineseWordMapApp
+cd C:\Users\s.bateman\Programs\ChineseWordMapApp
 git add .
 git commit -m "Update API to use HTTPS with DDNS domain"
 git push

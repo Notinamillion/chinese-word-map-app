@@ -47,7 +47,7 @@ If you have Android Studio installed (or willing to install it):
 
 ### Step 2: Generate Native Code
 ```bash
-cd C:\Users\s.bateman\ChineseWordMapApp
+cd C:\Users\s.bateman\Programs\ChineseWordMapApp
 npx expo prebuild --platform android
 ```
 
@@ -73,7 +73,7 @@ Let's try the absolute simplest approach with proper environment setup:
 # Run in PowerShell as Administrator
 $env:EXPO_NO_TELEMETRY = "1"
 $env:EXPO_NO_GIT_STATUS = "1"
-cd C:\Users\s.bateman\ChineseWordMapApp
+cd C:\Users\s.bateman\Programs\ChineseWordMapApp
 
 # Try just starting the build (it will prompt you)
 eas build --platform android --profile preview

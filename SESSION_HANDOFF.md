@@ -234,7 +234,7 @@ EAS Build has Windows path issues: `Error: ENOENT: mkdir '\\?'`
 
 #### Option 1: Interactive Build (Most Reliable)
 ```powershell
-cd C:\Users\s.bateman\ChineseWordMapApp
+cd C:\Users\s.bateman\Programs\ChineseWordMapApp
 eas build --platform android --profile preview
 # Answer prompts:
 # - Generate keystore? → Y
@@ -249,7 +249,7 @@ eas build --platform android --profile preview
 
 #### Option 3: Testing with Expo Go (Immediate)
 ```powershell
-cd C:\Users\s.bateman\ChineseWordMapApp
+cd C:\Users\s.bateman\Programs\ChineseWordMapApp
 npx expo start
 # Scan QR code with Expo Go app on phone
 ```
@@ -306,7 +306,7 @@ ChineseWordMapApp/
 
 ### Git Operations
 ```bash
-cd C:\Users\s.bateman\ChineseWordMapApp
+cd C:\Users\s.bateman\Programs\ChineseWordMapApp
 git status
 git add -A
 git commit -m "Your message"

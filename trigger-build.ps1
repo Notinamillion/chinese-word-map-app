@@ -14,7 +14,7 @@ $env:EXPO_NO_PROMPT = "1"
 $env:EAS_NO_PROMPT = "1"
 $env:CI = "1"
 
-Set-Location "C:\Users\s.bateman\ChineseWordMapApp"
+Set-Location "C:\Users\s.bateman\Programs\ChineseWordMapApp"
 
 Write-Host "Project ID: c6648226-8c45-45d9-a046-2efe0c94e261" -ForegroundColor Cyan
 Write-Host "Build Profile: preview (APK)" -ForegroundColor Cyan

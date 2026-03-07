@@ -76,7 +76,7 @@ This is the easiest method since EAS Build has Windows compatibility issues.
 If the web dashboard doesn't work, you can try initializing EAS manually:
 
 ```powershell
-cd C:\Users\s.bateman\ChineseWordMapApp
+cd C:\Users\s.bateman\Programs\ChineseWordMapApp
 
 # Initialize EAS project (creates projectId)
 eas init
@@ -111,7 +111,7 @@ This might prompt you for input, which could work better than the non-interactiv
 
 4. Build the app:
    ```powershell
-   cd C:\Users\s.bateman\ChineseWordMapApp
+   cd C:\Users\s.bateman\Programs\ChineseWordMapApp
    npx expo prebuild --platform android
    cd android
    .\gradlew assembleRelease
@@ -134,7 +134,7 @@ If you just want to test immediately without building an APK:
 
 3. On your computer:
    ```powershell
-   cd C:\Users\s.bateman\ChineseWordMapApp
+   cd C:\Users\s.bateman\Programs\ChineseWordMapApp
    npx expo start
    ```
 

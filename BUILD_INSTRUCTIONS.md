@@ -17,14 +17,14 @@
 Run in PowerShell (as Administrator):
 
 ```powershell
-cd C:\Users\s.bateman\ChineseWordMapApp
+cd C:\Users\s.bateman\Programs\ChineseWordMapApp
 .\build-apk.ps1
 ```
 
 Or manually:
 
 ```powershell
-cd C:\Users\s.bateman\ChineseWordMapApp
+cd C:\Users\s.bateman\Programs\ChineseWordMapApp
 eas build --platform android --profile preview
 ```
 
@@ -40,7 +40,7 @@ If you have Android Studio installed with Android SDK:
 4. Run:
 
 ```bash
-cd C:\Users\s.bateman\ChineseWordMapApp
+cd C:\Users\s.bateman\Programs\ChineseWordMapApp
 npx expo prebuild --platform android
 cd android
 .\gradlew assembleRelease
@@ -55,7 +55,7 @@ You can test immediately using Expo Go:
 1. Install "Expo Go" app from Google Play Store on your Android device
 2. On your computer, run:
    ```bash
-   cd C:\Users\s.bateman\ChineseWordMapApp
+   cd C:\Users\s.bateman\Programs\ChineseWordMapApp
    npx expo start
    ```
 3. Scan the QR code with Expo Go app

@@ -8,7 +8,7 @@ Write-Host ""
 $env:TEMP = "$env:USERPROFILE\AppData\Local\Temp"
 $env:TMP = "$env:USERPROFILE\AppData\Local\Temp"
 
-Set-Location "C:\Users\s.bateman\ChineseWordMapApp"
+Set-Location "C:\Users\s.bateman\Programs\ChineseWordMapApp"
 
 Write-Host "Current user:" -ForegroundColor Yellow
 eas whoami

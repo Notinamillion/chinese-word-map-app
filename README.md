@@ -63,7 +63,7 @@ Mobile-optimized Android app for learning Chinese characters with spaced repetit
 1. Install Expo Go app on your Android phone from Play Store
 2. Run on your computer:
    ```bash
-   cd C:\Users\s.bateman\ChineseWordMapApp
+   cd C:\Users\s.bateman\Programs\ChineseWordMapApp
    npm start
    ```
 3. Scan the QR code with Expo Go app
@@ -78,7 +78,7 @@ Mobile-optimized Android app for learning Chinese characters with spaced repetit
 
 2. Configure EAS (first time only):
    ```bash
-   cd C:\Users\s.bateman\ChineseWordMapApp
+   cd C:\Users\s.bateman\Programs\ChineseWordMapApp
    eas build:configure
    ```
 
@@ -98,7 +98,7 @@ When changes are made to `synology-scripts/server-current.js`, update the Synolo
 
 1. Upload the updated server file:
    ```powershell
-   pscp -P 222 -pw "Roc1725s!" "C:\Users\s.bateman\ChineseWordMapApp\synology-scripts\server-current.js" administrator@192.168.1.222:/volume1/web/chinese-word-map/server-synology.js
+   pscp -P 222 -pw "Roc1725s!" "C:\Users\s.bateman\Programs\ChineseWordMapApp\synology-scripts\server-current.js" administrator@192.168.1.222:/volume1/web/chinese-word-map/server-synology.js
    ```
 
 2. Restart the server (requires SSH access):

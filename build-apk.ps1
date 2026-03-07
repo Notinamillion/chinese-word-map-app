@@ -9,7 +9,7 @@ $env:TEMP = $env:LOCALAPPDATA + "\Temp"
 $env:TMP = $env:LOCALAPPDATA + "\Temp"
 
 # Navigate to app directory
-Set-Location -Path "C:\Users\s.bateman\ChineseWordMapApp"
+Set-Location -Path "C:\Users\s.bateman\Programs\ChineseWordMapApp"
 
 Write-Host "Checking EAS login status..." -ForegroundColor Yellow
 eas whoami

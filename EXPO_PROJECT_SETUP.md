@@ -26,7 +26,7 @@ The EAS CLI has Windows path compatibility issues, so we need to create the proj
 
 ### Step 2: Add Project ID to app.json
 
-1. Open: `C:\Users\s.bateman\ChineseWordMapApp\app.json`
+1. Open: `C:\Users\s.bateman\Programs\ChineseWordMapApp\app.json`
 
 2. Find the closing of the `"web"` section (around line 29-30)
 
@@ -59,7 +59,7 @@ The EAS CLI has Windows path compatibility issues, so we need to create the proj
 ### Step 3: Commit the Change
 
 ```powershell
-cd C:\Users\s.bateman\ChineseWordMapApp
+cd C:\Users\s.bateman\Programs\ChineseWordMapApp
 git add app.json
 git commit -m "Add EAS project ID"
 git push
@@ -84,7 +84,7 @@ Now you can build the APK either via:
 
 **Option B: Command Line**
 ```powershell
-cd C:\Users\s.bateman\ChineseWordMapApp
+cd C:\Users\s.bateman\Programs\ChineseWordMapApp
 eas build --platform android --profile preview
 ```
 

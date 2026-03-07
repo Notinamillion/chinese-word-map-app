@@ -11,13 +11,13 @@ From your Windows PowerShell, run these commands:
 
 ```powershell
 # Copy systemd service file
-pscp -P 222 -pw "Roc1725s!" "C:\Users\s.bateman\ChineseWordMapApp\synology-scripts\chinese-word-map.service" administrator@192.168.1.222:/tmp/
+pscp -P 222 -pw "Roc1725s!" "C:\Users\s.bateman\Programs\ChineseWordMapApp\synology-scripts\chinese-word-map.service" administrator@192.168.1.222:/tmp/
 
 # Copy backup script
-pscp -P 222 -pw "Roc1725s!" "C:\Users\s.bateman\ChineseWordMapApp\synology-scripts\backup-db.sh" administrator@192.168.1.222:/volume1/web/chinese-word-map/
+pscp -P 222 -pw "Roc1725s!" "C:\Users\s.bateman\Programs\ChineseWordMapApp\synology-scripts\backup-db.sh" administrator@192.168.1.222:/volume1/web/chinese-word-map/
 
 # Copy management script
-pscp -P 222 -pw "Roc1725s!" "C:\Users\s.bateman\ChineseWordMapApp\synology-scripts\manage.sh" administrator@192.168.1.222:/volume1/web/chinese-word-map/
+pscp -P 222 -pw "Roc1725s!" "C:\Users\s.bateman\Programs\ChineseWordMapApp\synology-scripts\manage.sh" administrator@192.168.1.222:/volume1/web/chinese-word-map/
 ```
 
 ## Step 3: SSH back into Synology and run these commands
