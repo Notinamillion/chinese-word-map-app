@@ -2222,12 +2222,52 @@ async function ppTranslate(text, to) {
     } catch (error) {
         console.error('[PP] Translate error:', error.message);
     }
-    if (out) {
-        if (ppTranslateCache.size >= 5000) ppTranslateCache.delete(ppTranslateCache.keys().next().value);
-        ppTranslateCache.set(key, out);
-    }
+    ppCacheSet(key, out);
     return out;
 }
+
+function ppCacheSet(key, value) {
+    if (!value) return;
+    if (ppTranslateCache.size >= 5000) ppTranslateCache.delete(ppTranslateCache.keys().next().value);
+    ppTranslateCache.set(key, value);
+}
+
+// A whole caption track at once: one Google call per line takes ~2.5 s from the NAS, but 40-50 lines
+// joined by newlines take about the same, so lines go in chunks and come back split on the newlines.
+app.post('/api/pp/translate-batch', requireAuth, async function(req, res) {
+    const to = req.body.to || 'en';
+    if (to !== 'en' && to !== 'zh-CN') return res.status(400).json({ error: 'to must be en or zh-CN' });
+    if (!Array.isArray(req.body.texts)) return res.status(400).json({ error: 'texts must be an array' });
+    const texts = req.body.texts.slice(0, 200).map(function(t) {
+        return typeof t === 'string' ? t.replace(/\s+/g, ' ').trim().slice(0, 500) : '';
+    });
+    const out = texts.map(function(t) { return ppTranslateCache.get(to + ':' + t) || ''; });
+    const chunks = [];
+    let chunk = [], length = 0;
+    texts.forEach(function(t, i) {
+        if (!t || out[i]) return;
+        if (chunk.length && (chunk.length >= 50 || length + t.length > 4500)) { chunks.push(chunk); chunk = []; length = 0; }
+        chunk.push(i);
+        length += t.length + 1;
+    });
+    if (chunk.length) chunks.push(chunk);
+    for (let c = 0; c < chunks.length; c++) {
+        const ids = chunks[c];
+        let parts = [];
+        try {
+            parts = ((await translate(ids.map(function(i) { return texts[i]; }).join('\n'), { to: to })).text || '').split('\n');
+        } catch (error) {
+            console.error('[PP] Batch translate error:', error.message);
+        }
+        if (parts.length === ids.length) {
+            ids.forEach(function(i, k) { out[i] = parts[k].trim(); ppCacheSet(to + ':' + texts[i], out[i]); });
+        } else {
+            // Line breaks didn't survive the round trip: translate this chunk line by line instead.
+            for (let k = 0; k < ids.length; k++) out[ids[k]] = await ppTranslate(texts[ids[k]], to);
+        }
+    }
+    res.json({ texts: out });
+});
 
 app.post('/api/pp/translate', requireAuth, async function(req, res) {
     const text = typeof req.body.text === 'string' ? req.body.text.trim().slice(0, 500) : '';
