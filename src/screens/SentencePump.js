@@ -1,6 +1,6 @@
 // Daily sentence mode, modelled on Language Reactor's PhrasePump:
 // one target word per sentence, pinyin over every word, tap any word to mark it known / learning / ignore.
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import * as Speech from 'expo-speech';
 import api from '../services/api';
@@ -19,6 +19,11 @@ export default function SentencePump({ onExit }) {
   const [stats, setStats] = useState({ done: 0, goal: 60, newToday: 0, newPerDay: 10 });
   const [marks, setMarks] = useState({}); // word -> status tapped on this card
   const [selected, setSelected] = useState(null); // token being looked at
+  const [hovered, setHovered] = useState(null); // word under the mouse (web)
+  const hoverTimer = useRef(0);
+  // Short delay so the mouse can travel from the word into its bubble.
+  const hoverWord = (w) => { clearTimeout(hoverTimer.current); setHovered(w); };
+  const unhoverSoon = () => { clearTimeout(hoverTimer.current); hoverTimer.current = setTimeout(() => setHovered(null), 250); };
   const [revealed, setRevealed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -119,7 +124,21 @@ export default function SentencePump({ onExit }) {
               const isTarget = t.w === card.target;
               return (
                 <Pressable key={i} onPress={() => cycle(t)} accessibilityLabel={`${t.w}: ${STATUS_LABELS[s]}`}
-                  style={[styles.word, isTarget && [styles.targetWord, styles[`box_${s}`]]]}>
+                  onHoverIn={() => hoverWord(t.w)} onHoverOut={unhoverSoon}
+                  style={[styles.word, isTarget && [styles.targetWord, styles[`box_${s}`]], hovered === t.w && styles.wordHovered]}>
+                  {hovered === t.w && !!t.m && (
+                    // Hover bubble (web/desktop), like Language Reactor's; on phones the tap panel below shows the meaning.
+                    // Shown below the word: above it gets clipped by the ScrollView.
+                    <View style={styles.bubbleWrap} pointerEvents="box-none">
+                      <View style={styles.bubbleArrow} />
+                      <Pressable style={styles.bubble} onHoverIn={() => hoverWord(t.w)} onHoverOut={unhoverSoon}>
+                        {t.m.split(/;\s*/).slice(0, 3).map((line, k) => <Text key={k} style={styles.bubbleLine}>{line}</Text>)}
+                        <Pressable onPress={() => setMarks((m) => ({ ...m, [t.w]: 'known' }))} style={[styles.bubbleBtn, s === 'known' && styles.bubbleBtnOn]}>
+                          <Text style={styles.bubbleBtnText}>✓</Text>
+                        </Pressable>
+                      </Pressable>
+                    </View>
+                  )}
                   <Text style={[styles.pinyin, styles[`p_${s}`]]}>{t.p}</Text>
                   <Text style={[styles.hanzi, styles[`h_${s}`], isTarget && styles.targetText]}>{t.w}</Text>
                 </Pressable>
@@ -175,9 +194,18 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   kind: { fontSize: 11, letterSpacing: 1, color: COLORS.textLight, fontWeight: '700' },
   play: { fontSize: 22 },
-  sentence: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-end', marginVertical: 20 },
+  // zIndex keeps the hover bubble above the rows that follow (each RN-web View is its own stacking context).
+  sentence: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-end', marginVertical: 20, zIndex: 2 },
   word: { alignItems: 'center', paddingHorizontal: 3, paddingVertical: 2, marginHorizontal: 1, borderRadius: 6, borderWidth: 1, borderColor: 'transparent' },
   targetWord: { borderWidth: 2 },
+  wordHovered: { zIndex: 10 },
+  bubbleWrap: { position: 'absolute', top: '100%', left: -120, right: -120, alignItems: 'center', zIndex: 10 },
+  bubble: { backgroundColor: '#0B5FA5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, maxWidth: 240, alignItems: 'center' },
+  bubbleLine: { color: COLORS.white, fontSize: 14, textAlign: 'center' },
+  bubbleBtn: { marginTop: 6, paddingHorizontal: 12, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' },
+  bubbleBtnOn: { backgroundColor: COLORS.primaryGreen, borderColor: COLORS.primaryGreen },
+  bubbleBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
+  bubbleArrow: { width: 0, height: 0, borderLeftWidth: 6, borderRightWidth: 6, borderBottomWidth: 6, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#0B5FA5' },
   box_new: { borderColor: PURPLE, backgroundColor: '#F1E8FA' },
   p_new: { color: PURPLE }, h_new: { color: PURPLE },
   box_known: { borderColor: COLORS.primaryGreen, backgroundColor: COLORS.greenLight },

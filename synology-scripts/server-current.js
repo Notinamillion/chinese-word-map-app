@@ -2465,6 +2465,29 @@ app.post('/api/pump/answer', requireAuth, function(req, res) {
     }
 });
 
+// Hover bubble (extension + Daily Sentences): dictionary meaning from the corpus or the app's word data, else machine translation.
+// shortcut: words outside the 18k corpus words and the app's compounds fall back to Google Translate; load all of CC-CEDICT if that's not good enough (costs NAS memory).
+function ppMeaning(word) {
+    const c = corpus.words[word];
+    if (c && c[1]) return c[1];
+    const data = characterDataMap || {};
+    if (data[word] && data[word].meanings) return data[word].meanings.slice(0, 3).join('; ');
+    const chars = parseCharacters(word);
+    for (let i = 0; i < chars.length; i++) {
+        const compounds = data[chars[i]] && data[chars[i]].compounds;
+        const hit = Array.isArray(compounds) && compounds.find(function(x) { return x.word === word; });
+        if (hit && hit.meanings) return hit.meanings.slice(0, 3).join('; ');
+    }
+    return '';
+}
+
+app.get('/api/pp/lookup', requireAuth, async function(req, res) {
+    const word = typeof req.query.word === 'string' ? req.query.word.trim().slice(0, 20) : '';
+    if (!word || !HAN_RE.test(word)) return res.status(400).json({ error: 'Chinese word required' });
+    const meaning = ppMeaning(word) || await ppTranslate(word, 'en');
+    res.json({ word: word, pinyin: pinyin(word, { toneType: 'symbol' }).replace(/\s+/g, ''), meaning: meaning });
+});
+
 // Compat for CharacterDetail / SentencePractice, which call routes from a patch that was never applied.
 app.get('/api/sentences/:char', requireAuth, function(req, res) {
     const ch = req.params.char;

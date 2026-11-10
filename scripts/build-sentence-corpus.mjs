@@ -31,8 +31,14 @@ for (const line of fs.readFileSync(cedictPath, 'utf8').split('\n')) {
       t2sCounts.set(c, counts);
     });
   }
-  const def = defs.split('/').filter((d) => !/^(CL:|variant of|old variant|see )/.test(d)).slice(0, 3).join('; ');
-  if (def && !meanings.has(simp)) meanings.set(simp, def.slice(0, 90));
+  // Up to 3 whole senses within ~90 characters (never cut mid-word).
+  let def = '';
+  for (const d of defs.split('/').filter((x) => !/^(CL:|variant of|old variant|see )/.test(x)).slice(0, 3)) {
+    const next = def ? `${def}; ${d}` : d;
+    if (def && next.length > 90) break;
+    def = next;
+  }
+  if (def && !meanings.has(simp)) meanings.set(simp, def);
 }
 // shortcut: char-level conversion picks the most common mapping, so ambiguous chars (乾→干/乾, 著→着/著) can be wrong; use OpenCC if it matters.
 const t2s = new Map([...t2sCounts].filter(([c]) => !simpChars.has(c)).map(([c, counts]) => [c, [...counts].sort((a, b) => b[1] - a[1])[0][0]]));
