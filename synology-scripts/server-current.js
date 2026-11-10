@@ -2177,11 +2177,13 @@ app.get('/api/pp/words', requireAuth, function(req, res) {
         Object.keys(progress.characterProgress || {}).forEach(function(c) {
             if (progress.characterProgress[c] && progress.characterProgress[c].known) known.add(c);
         });
-        ppWordRows(req.userId).forEach(function(row) {
-            if (row[1] === 1) known.add(row[0]); else known.delete(row[0]);
-        });
         const words = {};
         known.forEach(function(w) { words[w] = { status: 'known' }; });
+        // Explicit marks (extension or Daily Sentences) win: known, learning, ignored; "unknown" = not marked.
+        const r = db.exec('SELECT word, status FROM pp_words WHERE user_id = ?', [req.userId]);
+        (r.length ? r[0].values : []).forEach(function(row) {
+            if (row[1] === 'unknown' || !row[1]) delete words[row[0]]; else words[row[0]] = { status: row[1] };
+        });
         res.json({ words: words });
     } catch (error) {
         console.error('[PP] Words load error:', error);
@@ -2192,13 +2194,17 @@ app.get('/api/pp/words', requireAuth, function(req, res) {
 app.post('/api/pp/words', requireAuth, function(req, res) {
     const word = typeof req.body.word === 'string' ? req.body.word.trim().slice(0, 50) : '';
     if (!word || !HAN_RE.test(word)) return res.status(400).json({ error: 'Chinese word required' });
-    if (typeof req.body.known !== 'boolean') return res.status(400).json({ error: 'known must be boolean' });
+    // {status: known|learning|ignored|unknown}; older extension builds send {known: boolean}.
+    const status = typeof req.body.known === 'boolean' ? (req.body.known ? 'known' : 'unknown') : req.body.status;
+    if (PUMP_STATUSES.indexOf(status) === -1) return res.status(400).json({ error: 'status must be known, learning, ignored or unknown' });
     try {
-        db.run('INSERT OR REPLACE INTO pp_words (user_id, word, known, updated_at, status) VALUES (?, ?, ?, ?, ?)',
-            [req.userId, word, req.body.known ? 1 : 0, Date.now(), req.body.known ? 'known' : 'unknown']);
+        const now = Date.now();
+        // A word marked learning on YouTube shows up in Daily Sentences straight away.
+        db.run('INSERT OR REPLACE INTO pp_words (user_id, word, known, updated_at, status, due) VALUES (?, ?, ?, ?, ?, ?)',
+            [req.userId, word, status === 'known' || status === 'ignored' ? 1 : 0, now, status, status === 'learning' ? now : null]);
         saveDatabase();
         const count = db.exec('SELECT COUNT(*) FROM pp_words WHERE user_id = ? AND known = 1', [req.userId])[0].values[0][0];
-        res.json({ word: word, known: req.body.known, count: count });
+        res.json({ word: word, status: status, known: status === 'known', count: count });
     } catch (error) {
         console.error('[PP] Word save error:', error);
         res.status(500).json({ error: 'Failed to save word' });
@@ -2264,6 +2270,8 @@ app.post('/api/pp/phrases', requireAuth, async function(req, res) {
 // ============================================
 const PUMP_GOAL = 60;
 const PUMP_NEW_PER_DAY = 10;
+// Like Language Reactor: a word you don't know gets a few sentences in a row, every day, until you mark it known.
+const PUMP_PER_WORD = 3;
 const DAY_MS = 86400000;
 const PUMP_STATUSES = ['known', 'learning', 'ignored', 'unknown'];
 let corpus = { words: {}, s: [] };
@@ -2293,36 +2301,12 @@ function loadCorpus() {
 
 function initPump() {
     const cols = db.exec('PRAGMA table_info(pp_words)')[0].values.map(function(r) { return r[1]; });
-    [['status', 'TEXT'], ['due', 'INTEGER'], ['interval', 'REAL'], ['ease', 'REAL'], ['reps', 'INTEGER'], ['lapses', 'INTEGER']].forEach(function(c) {
+    [['status', 'TEXT'], ['due', 'INTEGER'], ['interval', 'REAL'], ['ease', 'REAL'], ['reps', 'INTEGER'], ['lapses', 'INTEGER'], ['shown_day', 'TEXT']].forEach(function(c) {
         if (cols.indexOf(c[0]) === -1) db.run('ALTER TABLE pp_words ADD COLUMN ' + c[0] + ' ' + c[1]);
     });
     db.run("UPDATE pp_words SET status = CASE known WHEN 1 THEN 'known' ELSE 'unknown' END WHERE status IS NULL");
     db.run('CREATE TABLE IF NOT EXISTS pump_days (user_id INTEGER NOT NULL, day TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, new_words INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, day))');
     db.run('CREATE TABLE IF NOT EXISTS pump_seen (user_id INTEGER NOT NULL, sentence_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (user_id, sentence_id))');
-}
-
-// Same scheduler as phrasepump/srs.js, in Node 12 syntax.
-function srsSchedule(card, grade, now) {
-    const next = Object.assign({}, card);
-    const ease = card.ease || 2.5, reps = card.reps || 0, interval = card.interval || 0;
-    if (grade === 'again') {
-        next.lapses = (card.lapses || 0) + 1;
-        next.ease = Math.max(1.3, ease - 0.2);
-        next.interval = 0;
-        next.reps = Math.max(0, reps - 1);
-        next.due = now + 10 * 60000;
-        return next;
-    }
-    if (grade === 'good') {
-        next.interval = reps ? Math.max(1, Math.round(interval * ease)) : 1;
-        next.ease = ease;
-    } else {
-        next.interval = reps ? Math.max(2, Math.round(interval * ease * 1.3)) : 2;
-        next.ease = Math.min(2.8, ease + 0.15);
-    }
-    next.reps = reps + 1;
-    next.due = now + next.interval * DAY_MS;
-    return next;
 }
 
 // shortcut: the daily count resets at UTC midnight, which is UK midnight in winter and 1am in summer; store a user timezone if that matters.
@@ -2342,26 +2326,32 @@ function userWords(userId) {
     Object.keys(progress.characterProgress || {}).forEach(function(c) {
         if (progress.characterProgress[c] && progress.characterProgress[c].known) status.set(c, 'known');
     });
-    const r = db.exec('SELECT word, status, due, interval, ease, reps, lapses FROM pp_words WHERE user_id = ?', [userId]);
+    const r = db.exec('SELECT word, status, due, reps, shown_day FROM pp_words WHERE user_id = ?', [userId]);
     (r.length ? r[0].values : []).forEach(function(row) {
         status.set(row[0], row[1]);
-        srs.set(row[0], { due: row[2], interval: row[3], ease: row[4], reps: row[5], lapses: row[6] });
+        srs.set(row[0], { due: row[2], reps: row[3], shownDay: row[4] });
     });
     return { status: status, srs: srs };
 }
 
 const isKnownish = function(s) { return s === 'known' || s === 'ignored'; };
 
-// The sentence for a target word with the fewest other words you don't know yet.
+// The sentence for a target word: few other words you don't know, but long enough to be real reading.
+// Score = 4 per unknown word, minus 1 per word (up to 14), plus a big penalty under 10 characters.
 function pickSentence(word, status, exclude) {
     const list = wordIndex.get(word) || [];
-    let best = null, bestUnknown = Infinity;
-    for (let i = 0; i < list.length && i < 400; i++) {
+    let best = null, bestScore = Infinity;
+    for (let i = 0; i < list.length && i < 3000; i++) {
         const s = corpus.s[list[i]];
         if (exclude.has(s[0])) continue;
-        let unknown = 0;
-        s[3].forEach(function(t) { if (Array.isArray(t) && t[0] !== word && !isKnownish(status.get(t[0]))) unknown++; });
-        if (unknown < bestUnknown) { best = s; bestUnknown = unknown; if (unknown === 0) break; }
+        let unknown = 0, words = 0;
+        s[3].forEach(function(t) {
+            if (!Array.isArray(t)) return;
+            words++;
+            if (t[0] !== word && !isKnownish(status.get(t[0]))) unknown++;
+        });
+        const score = unknown * 4 - Math.min(words, 14) + (s[1].length < 10 ? 20 : 0);
+        if (score < bestScore) { best = s; bestScore = score; }
     }
     return best;
 }
@@ -2386,32 +2376,41 @@ app.get('/api/pump/next', requireAuth, function(req, res) {
         const day = pumpDay(req.userId);
         const seenRows = db.exec('SELECT sentence_id FROM pump_seen WHERE user_id = ? AND at > ?', [req.userId, now - 30 * DAY_MS]);
         const exclude = new Set(seenRows.length ? seenRows[0].values.map(function(r) { return r[0]; }) : []);
+        const today = pumpToday();
         const cards = [];
         const used = new Set();
-        function add(word, kind) {
-            if (cards.length >= limit || used.has(word)) return;
-            const s = pickSentence(word, u.status, exclude);
-            if (!s) return;
+        // Adds `times` sentences in a row for one word.
+        function add(word, kind, times) {
+            if (used.has(word)) return 0;
             used.add(word);
-            exclude.add(s[0]);
-            cards.push(pumpCard(s, word, u.status, kind));
+            let added = 0;
+            while (added < times && cards.length < limit) {
+                const s = pickSentence(word, u.status, exclude);
+                if (!s) break;
+                exclude.add(s[0]);
+                cards.push(pumpCard(s, word, u.status, kind));
+                added++;
+            }
+            return added;
         }
+        const shownToday = function(w) { const c = u.srs.get(w); return c && c.shownDay === today ? (c.reps || 0) : 0; };
         const learning = [];
         u.status.forEach(function(st, w) { if (st === 'learning') learning.push(w); });
         learning.sort(function(a, b) { return (u.srs.get(a).due || 0) - (u.srs.get(b).due || 0); });
-        learning.filter(function(w) { return (u.srs.get(w).due || 0) <= now; }).forEach(function(w) { add(w, 'review'); });
+        learning.filter(function(w) { return (u.srs.get(w).due || 0) <= now; })
+            .forEach(function(w) { add(w, 'review', Math.max(1, PUMP_PER_WORD - shownToday(w))); });
 
         let newLeft = PUMP_NEW_PER_DAY - day.newWords;
         const words = Object.keys(corpus.words); // already in frequency order
         for (let i = 0; i < words.length && newLeft > 0 && cards.length < limit; i++) {
             const st = u.status.get(words[i]);
             if (st && st !== 'unknown') continue;
-            const before = cards.length;
-            add(words[i], 'new');
-            if (cards.length > before) newLeft--;
+            // No dictionary entry = segmenter artefact like 我的 or 我想, not a word worth learning.
+            if (!corpus.words[words[i]][1]) continue;
+            if (add(words[i], 'new', PUMP_PER_WORD)) newLeft--;
         }
-        // Daily goal not met and nothing due: more sentences for words you're learning.
-        if (day.done + cards.length < PUMP_GOAL) learning.forEach(function(w) { add(w, 'extra'); });
+        // Daily goal not met and nothing due: one more sentence each for words you're learning.
+        if (day.done + cards.length < PUMP_GOAL) learning.forEach(function(w) { add(w, 'extra', 1); });
 
         res.json({ cards: cards, done: day.done, goal: PUMP_GOAL, newToday: day.newWords, newPerDay: PUMP_NEW_PER_DAY });
     } catch (error) {
@@ -2420,33 +2419,39 @@ app.get('/api/pump/next', requireAuth, function(req, res) {
     }
 });
 
-// One POST per card: the grade for the target word plus any word statuses tapped on that card (one DB write).
+// One POST per card ("Next"): the word statuses tapped on that card, in one DB write.
+// The target stays "learning" until you tap it to Known/Ignored; after PUMP_PER_WORD sentences today it waits for tomorrow.
 app.post('/api/pump/answer', requireAuth, function(req, res) {
     const body = req.body || {};
     const s = corpusById.get(Number(body.sentenceId));
     const target = typeof body.target === 'string' ? body.target : '';
-    const grade = body.grade;
     const marks = body.words && typeof body.words === 'object' ? body.words : {};
     if (!s || !target) return res.status(400).json({ error: 'sentenceId and target required' });
-    if (['again', 'good', 'easy', null, undefined].indexOf(grade) === -1) return res.status(400).json({ error: 'grade must be again, good or easy' });
     try {
         const now = Date.now();
+        const today = pumpToday();
         const u = userWords(req.userId);
         const wasNew = !u.status.has(target) || u.status.get(target) === 'unknown';
         function save(word, status, card) {
-            db.run('INSERT OR REPLACE INTO pp_words (user_id, word, known, updated_at, status, due, interval, ease, reps, lapses) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [req.userId, word, isKnownish(status) ? 1 : 0, now, status, card.due || null, card.interval || null, card.ease || null, card.reps || null, card.lapses || null]);
+            db.run('INSERT OR REPLACE INTO pp_words (user_id, word, known, updated_at, status, due, reps, shown_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [req.userId, word, isKnownish(status) ? 1 : 0, now, status, card.due || null, card.reps || null, card.shownDay || null]);
         }
         Object.keys(marks).slice(0, 50).forEach(function(w) {
-            if (w.length > 50 || !HAN_RE.test(w) || PUMP_STATUSES.indexOf(marks[w]) === -1) return;
-            const card = marks[w] === 'learning' ? (u.srs.get(w) && u.srs.get(w).due ? u.srs.get(w) : { due: now }) : {};
-            save(w, marks[w], card);
+            if (w === target || w.length > 50 || !HAN_RE.test(w) || PUMP_STATUSES.indexOf(marks[w]) === -1) return;
+            const existing = u.srs.get(w);
+            save(w, marks[w], marks[w] === 'learning' ? (existing && existing.due ? existing : { due: now }) : {});
         });
-        if (!marks[target] && grade) {
+        const targetMark = PUMP_STATUSES.indexOf(marks[target]) !== -1 ? marks[target] : 'learning';
+        if (targetMark !== 'learning') {
+            save(target, targetMark, {});
+        } else {
             const card = u.srs.get(target) || {};
-            // Extra practice of a not-yet-due word only counts if you forgot it.
-            const next = body.kind === 'extra' && grade !== 'again' && card.due ? card : srsSchedule(card, grade, now);
-            save(target, 'learning', next);
+            if (body.kind === 'extra' && card.due) {
+                // extra sentence for a word already done for today: leave its schedule alone
+            } else {
+                const shown = (card.shownDay === today ? (card.reps || 0) : 0) + 1;
+                save(target, 'learning', { due: shown >= PUMP_PER_WORD ? Date.parse(today) + DAY_MS : now, reps: shown, shownDay: today });
+            }
         }
         db.run('INSERT OR REPLACE INTO pump_seen (user_id, sentence_id, at) VALUES (?, ?, ?)', [req.userId, s[0], now]);
         const day = pumpDay(req.userId);

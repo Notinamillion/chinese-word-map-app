@@ -6,7 +6,12 @@ import * as Speech from 'expo-speech';
 import api from '../services/api';
 import COLORS from '../theme/colors';
 
-const STATUS_LABELS = { known: 'Known', learning: 'Learning', ignored: 'Ignore' };
+// Language Reactor colours: purple = not marked yet, green = known, orange = learning; grey = ignored.
+const STATUS_LABELS = { new: 'Not marked', known: 'Known', learning: 'Learning', ignored: 'Ignored' };
+// Tapping cycles: not marked → Known → Learning → Ignored → Known.
+const NEXT_STATUS = { new: 'known', known: 'learning', learning: 'ignored', ignored: 'known' };
+const colourOf = (s) => (STATUS_LABELS[s] ? s : 'new');
+const PURPLE = '#8E44AD'; // not in the brand palette; matches Language Reactor's "not marked" colour
 
 export default function SentencePump({ onExit }) {
   const [cards, setCards] = useState([]);
@@ -37,20 +42,25 @@ export default function SentencePump({ onExit }) {
 
   const card = cards[index];
   const statusOf = (w, s) => marks[w] || s;
+  const cycle = (t) => {
+    setMarks((m) => ({ ...m, [t.w]: NEXT_STATUS[colourOf(m[t.w] || t.s)] }));
+    setSelected(t.w);
+  };
 
-  const answer = async (grade) => {
+  const next = async () => {
     if (!card || saving) return;
     setSaving(true);
     try {
-      const data = await api.answerPump({ sentenceId: card.id, target: card.target, kind: card.kind, grade, words: marks });
+      const data = await api.answerPump({ sentenceId: card.id, target: card.target, kind: card.kind, words: marks });
       setStats((s) => ({ ...s, done: data.done, newToday: data.newToday }));
-      // Statuses set here should show on later cards in this batch too.
-      setCards((all) => all.map((c) => ({ ...c, tokens: c.tokens.map((t) => (t.w && marks[t.w] ? { ...t, s: marks[t.w] } : t)) })));
+      // Statuses set here show on later cards too; a word now known/ignored loses its remaining sentences.
+      const rest = cards.slice(index + 1)
+        .filter((c) => !['known', 'ignored'].includes(marks[c.target]))
+        .map((c) => ({ ...c, tokens: c.tokens.map((t) => (t.w && marks[t.w] ? { ...t, s: marks[t.w] } : t)) }));
       setMarks({});
       setSelected(null);
       setRevealed(false);
-      if (index + 1 < cards.length) setIndex(index + 1);
-      else await load();
+      if (rest.length) { setCards(rest); setIndex(0); } else await load();
     } catch (e) {
       setError('Could not save. Try again.');
     }
@@ -105,11 +115,11 @@ export default function SentencePump({ onExit }) {
           <View style={styles.sentence}>
             {card.tokens.map((t, i) => {
               if (!t.w) return <Text key={i} style={styles.punct}>{t.t}</Text>;
-              const s = statusOf(t.w, t.s);
+              const s = colourOf(statusOf(t.w, t.s));
               const isTarget = t.w === card.target;
               return (
-                <Pressable key={i} onPress={() => setSelected(t.w === selected ? null : t.w)}
-                  style={[styles.word, isTarget && styles.targetWord, t.w === selected && styles.selectedWord]}>
+                <Pressable key={i} onPress={() => cycle(t)} accessibilityLabel={`${t.w}: ${STATUS_LABELS[s]}`}
+                  style={[styles.word, isTarget && [styles.targetWord, styles[`box_${s}`]]]}>
                   <Text style={[styles.pinyin, styles[`p_${s}`]]}>{t.p}</Text>
                   <Text style={[styles.hanzi, styles[`h_${s}`], isTarget && styles.targetText]}>{t.w}</Text>
                 </Pressable>
@@ -123,34 +133,29 @@ export default function SentencePump({ onExit }) {
 
           <View style={styles.targetRow}>
             {revealed && <Text style={styles.targetMeaning} numberOfLines={2}>{targetToken?.m}</Text>}
-            <View style={styles.targetChip}>
-              <Text style={styles.targetChipPinyin}>{targetToken?.p}</Text>
-              <Text style={styles.targetChipText}>{card.target}</Text>
-            </View>
+            {targetToken && (
+              <Pressable onPress={() => cycle(targetToken)}
+                style={[styles.targetChip, styles[`box_${colourOf(statusOf(targetToken.w, targetToken.s))}`]]}>
+                <Text style={[styles.targetChipPinyin, styles[`p_${colourOf(statusOf(targetToken.w, targetToken.s))}`]]}>{targetToken.p}</Text>
+                <Text style={[styles.targetChipText, styles[`h_${colourOf(statusOf(targetToken.w, targetToken.s))}`]]}>{card.target}</Text>
+              </Pressable>
+            )}
           </View>
         </View>
 
         {look && (
           <View style={styles.lookup}>
-            <Text style={styles.lookupWord}>{look.w} <Text style={styles.lookupPinyin}>{look.p}</Text></Text>
+            <Text style={styles.lookupWord}>{look.w} <Text style={styles.lookupPinyin}>{look.p}</Text>
+              <Text style={[styles.lookupStatus, styles[`h_${colourOf(statusOf(look.w, look.s))}`]]}>  {STATUS_LABELS[colourOf(statusOf(look.w, look.s))]}</Text>
+            </Text>
             {!!look.m && <Text style={styles.lookupMeaning}>{look.m}</Text>}
-            <View style={styles.statusRow}>
-              {Object.keys(STATUS_LABELS).map((st) => (
-                <Pressable key={st} onPress={() => setMarks((m) => ({ ...m, [look.w]: st }))}
-                  style={[styles.statusBtn, statusOf(look.w, look.s) === st && styles[`sb_${st}`]]}>
-                  <Text style={[styles.statusBtnText, statusOf(look.w, look.s) === st && styles.statusBtnTextOn]}>{STATUS_LABELS[st]}</Text>
-                </Pressable>
-              ))}
-            </View>
           </View>
         )}
 
-        <View style={styles.grades}>
-          <Pressable disabled={saving} style={[styles.grade, styles.gAgain]} onPress={() => answer('again')}><Text style={styles.gText}>Forgot</Text></Pressable>
-          <Pressable disabled={saving} style={[styles.grade, styles.gGood]} onPress={() => answer('good')}><Text style={styles.gText}>Got it</Text></Pressable>
-          <Pressable disabled={saving} style={[styles.grade, styles.gEasy]} onPress={() => answer('easy')}><Text style={styles.gText}>Easy</Text></Pressable>
-        </View>
-        <Text style={styles.hint}>Tap any word to mark it Known, Learning or Ignore.</Text>
+        <Pressable disabled={saving} style={styles.nextBtn} onPress={next}>
+          <Text style={styles.nextText}>Next ▶</Text>
+        </Pressable>
+        <Text style={styles.hint}>Tap a word to change it: purple = not marked, green = known, orange = learning, grey = ignored.</Text>
       </ScrollView>
     </View>
   );
@@ -172,12 +177,17 @@ const styles = StyleSheet.create({
   play: { fontSize: 22 },
   sentence: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'flex-end', marginVertical: 20 },
   word: { alignItems: 'center', paddingHorizontal: 3, paddingVertical: 2, marginHorizontal: 1, borderRadius: 6, borderWidth: 1, borderColor: 'transparent' },
-  targetWord: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
-  selectedWord: { borderColor: COLORS.info },
+  targetWord: { borderWidth: 2 },
+  box_new: { borderColor: PURPLE, backgroundColor: '#F1E8FA' },
+  p_new: { color: PURPLE }, h_new: { color: PURPLE },
+  box_known: { borderColor: COLORS.primaryGreen, backgroundColor: COLORS.greenLight },
+  box_learning: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight },
+  box_ignored: { borderColor: COLORS.darkGray, backgroundColor: COLORS.lightGray },
+  lookupStatus: { fontSize: 14, fontWeight: '700' },
   pinyin: { fontSize: 12, color: COLORS.textLight },
   hanzi: { fontSize: 28, color: COLORS.textDark },
   punct: { fontSize: 28, color: COLORS.textLight, paddingBottom: 2 },
-  targetText: { color: COLORS.primaryDark, fontWeight: '700' },
+  targetText: { fontWeight: '700' },
   p_known: { color: COLORS.greenDark }, h_known: { color: COLORS.greenDark },
   p_learning: { color: COLORS.primary }, h_learning: { color: COLORS.primaryDark },
   p_ignored: { color: COLORS.darkGray }, h_ignored: { color: COLORS.darkGray },
@@ -185,26 +195,15 @@ const styles = StyleSheet.create({
   reveal: { textAlign: 'center', fontSize: 15, color: COLORS.info, marginBottom: 12, fontWeight: '600' },
   targetRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 4 },
   targetMeaning: { flex: 1, color: COLORS.textMedium, fontSize: 13, marginRight: 10, textAlign: 'right' },
-  targetChip: { alignItems: 'center', borderWidth: 1, borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  targetChipPinyin: { fontSize: 11, color: COLORS.primaryDark },
-  targetChipText: { fontSize: 18, color: COLORS.primaryDark },
+  targetChip: { alignItems: 'center', borderWidth: 1, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  targetChipPinyin: { fontSize: 11 },
+  targetChipText: { fontSize: 18 },
   lookup: { backgroundColor: COLORS.white, borderRadius: 12, padding: 14, marginTop: 12 },
   lookupWord: { fontSize: 22, color: COLORS.textDark },
   lookupPinyin: { fontSize: 15, color: COLORS.textMedium },
   lookupMeaning: { fontSize: 14, color: COLORS.textMedium, marginTop: 4 },
-  statusRow: { flexDirection: 'row', marginTop: 10, gap: 8 },
-  statusBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: COLORS.darkGray, alignItems: 'center' },
-  sb_known: { backgroundColor: COLORS.primaryGreen, borderColor: COLORS.primaryGreen },
-  sb_learning: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  sb_ignored: { backgroundColor: COLORS.textLight, borderColor: COLORS.textLight },
-  statusBtnText: { color: COLORS.textMedium, fontWeight: '600' },
-  statusBtnTextOn: { color: COLORS.white },
-  grades: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  grade: { flex: 1, paddingVertical: 14, borderRadius: 10, alignItems: 'center', borderWidth: 2 },
-  gAgain: { backgroundColor: COLORS.qualityForgot.bg, borderColor: COLORS.qualityForgot.border },
-  gGood: { backgroundColor: COLORS.qualityGood.bg, borderColor: COLORS.qualityGood.border },
-  gEasy: { backgroundColor: COLORS.qualityPerfect.bg, borderColor: COLORS.primary },
-  gText: { fontSize: 16, fontWeight: '700', color: COLORS.textDark },
+  nextBtn: { marginTop: 16, backgroundColor: COLORS.primaryGreen, paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
+  nextText: { fontSize: 17, fontWeight: '700', color: COLORS.white },
   hint: { textAlign: 'center', color: COLORS.textLight, fontSize: 12, marginTop: 12 },
   doneTitle: { fontSize: 22, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' },
   doneText: { fontSize: 15, color: COLORS.textMedium, marginTop: 8, textAlign: 'center' },
