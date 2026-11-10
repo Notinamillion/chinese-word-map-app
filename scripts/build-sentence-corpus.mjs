@@ -16,11 +16,13 @@ const HAN = /[㐀-鿿]/;
 // --- CEDICT: traditional→simplified char map and word meanings ---
 const t2sCounts = new Map(); // trad char -> Map(simp char -> count)
 const simpChars = new Set(); // chars that occur in simplified headwords are never converted (么 must not become 幺)
-const meanings = new Map(); // simplified word -> short meaning
+const entries = new Map(); // simplified word -> [{ py, defs }] in dictionary order
 for (const line of fs.readFileSync(cedictPath, 'utf8').split('\n')) {
-  const m = line.match(/^(\S+)\s+(\S+)\s+\[[^\]]+\]\s+\/(.+)\//);
+  const m = line.match(/^(\S+)\s+(\S+)\s+\[([^\]]+)\]\s+\/(.+)\//);
   if (!m) continue;
-  const [, trad, simp, defs] = m;
+  const [, trad, simp, py, defs] = m;
+  if (!entries.has(simp)) entries.set(simp, []);
+  entries.get(simp).push({ py, defs: defs.split('/') });
   const tc = Array.from(trad), sc = Array.from(simp);
   sc.forEach((c) => simpChars.add(c));
   if (tc.length === sc.length) {
@@ -31,14 +33,36 @@ for (const line of fs.readFileSync(cedictPath, 'utf8').split('\n')) {
       t2sCounts.set(c, counts);
     });
   }
-  // Up to 3 whole senses within ~90 characters (never cut mid-word).
-  let def = '';
-  for (const d of defs.split('/').filter((x) => !/^(CL:|variant of|old variant|see )/.test(x)).slice(0, 3)) {
-    const next = def ? `${def}; ${d}` : d;
-    if (def && next.length > 90) break;
-    def = next;
+}
+
+// CC-CEDICT often lists a surname / proper-noun entry first (从 "surname Cong" before "from"), and some
+// words have two readings (东西 dōngxī "east and west" vs dōngxi "thing"). Order a word's entries:
+// common nouns before proper nouns, colloquial neutral-tone readings first, then the usual pronunciation.
+const SKIP_SENSE = /^(CL:|variant of|old variant|see |surname |used in |\(surname\)|also written|erhua variant)/;
+const toneless = (p) => p.toLowerCase().replace(/u:/g, 'v').replace(/[^a-zv]/g, '');
+function meaningOf(word) {
+  const list = entries.get(word);
+  if (!list) return '';
+  const usual = pinyin(word, { toneType: 'num', type: 'array' }).join('').toLowerCase().replace(/0/g, '5');
+  const score = (e) => {
+    if (/^[A-Z]/.test(e.py)) return 3; // proper noun
+    // Neutral-tone readings are the everyday ones: particles (了 le, 的 de) and colloquial words (东西 dongxi).
+    if (/[a-z]5\b/.test(e.py) && (Array.from(word).length === 1 || list.some((o) => o !== e && toneless(o.py) === toneless(e.py)))) return 0;
+    if (e.py.replace(/\s/g, '').toLowerCase().replace(/u:/g, 'v') === usual) return 1;
+    return 2;
+  };
+  const ordered = list.map((e, i) => ({ e, s: score(e), i })).sort((a, b) => a.s - b.s || a.i - b.i);
+  // Up to 3 whole senses within ~90 characters (never cut mid-word), from the best entry that has any.
+  for (const { e } of ordered) {
+    let def = '';
+    for (const d of e.defs.filter((x) => x && !SKIP_SENSE.test(x)).map((x) => x.replace(/^\((bound form|literary)\)\s*/, '')).slice(0, 3)) {
+      const next = def ? `${def}; ${d}` : d;
+      if (def && next.length > 90) break;
+      def = next;
+    }
+    if (def) return def;
   }
-  if (def && !meanings.has(simp)) meanings.set(simp, def);
+  return '';
 }
 // shortcut: char-level conversion picks the most common mapping, so ambiguous chars (乾→干/乾, 著→着/著) can be wrong; use OpenCC if it matters.
 const t2s = new Map([...t2sCounts].filter(([c]) => !simpChars.has(c)).map(([c, counts]) => [c, [...counts].sort((a, b) => b[1] - a[1])[0][0]]));
@@ -83,13 +107,18 @@ for (const [id, , raw] of tsv('cmn_sentences.tsv')) {
 
 const words = {};
 [...counts].sort((a, b) => b[1] - a[1]).forEach(([w], rank) => {
-  words[w] = [rank + 1, meanings.get(w) || ''];
+  words[w] = [rank + 1, meaningOf(w)];
 });
 
 // Self-check: tokens rebuild the sentence, and pinyin exists for every word.
 for (const [, zh, , t] of sentences) {
   assert.equal(t.map((x) => (Array.isArray(x) ? x[0] : x)).join(''), zh);
   assert.ok(t.every((x) => !Array.isArray(x) || x[1]));
+}
+
+// Meanings must be the everyday sense, not a surname or the rarer reading.
+for (const [w, re] of [['从', /^from/], ['东西', /^thing/], ['会', /^can/], ['了', /completed action/], ['张', /^to open|^to spread|classifier/]]) {
+  assert.match(words[w]?.[1] || '', re, w);
 }
 
 fs.writeFileSync(outPath, JSON.stringify({ v: 1, words, s: sentences }));
