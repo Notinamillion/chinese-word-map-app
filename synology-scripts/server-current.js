@@ -153,46 +153,59 @@ async function initDatabase() {
         )
     `);
 
-    // Create sentences table
+    // Auth tokens table (persists across restarts)
     db.run(`
-        CREATE TABLE IF NOT EXISTS sentences (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            character TEXT NOT NULL,
-            sense_id INTEGER NOT NULL DEFAULT 0,
-            sense_meaning TEXT,
-            chinese TEXT NOT NULL,
-            pinyin TEXT,
-            english TEXT NOT NULL,
-            difficulty INTEGER DEFAULT 1,
-            source TEXT DEFAULT 'tatoeba',
-            created_at INTEGER DEFAULT (strftime('%s', 'now'))
+        CREATE TABLE IF NOT EXISTS auth_tokens (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            is_admin INTEGER DEFAULT 0,
+            expires INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
     `);
 
-    // Create sentence_progress table for per-sense mastery
+    // Load persisted tokens back into memory map
+    try {
+        var tokenRows = db.exec('SELECT token, user_id, username, is_admin, expires FROM auth_tokens WHERE expires > ?', [Date.now()]);
+        if (tokenRows.length > 0) {
+            tokenRows[0].values.forEach(function(row) {
+                authTokens.set(row[0], { userId: row[1], username: row[2], isAdmin: row[3] === 1, expires: row[4] });
+            });
+            console.log('[AUTH] Loaded ' + tokenRows[0].values.length + ' persisted tokens');
+        }
+        // Clean up expired tokens
+        db.run('DELETE FROM auth_tokens WHERE expires <= ?', [Date.now()]);
+    } catch(e) {
+        console.error('[AUTH] Failed to load persisted tokens:', e.message);
+    }
+
+    // Quiz history table
     db.run(`
-        CREATE TABLE IF NOT EXISTS sentence_progress (
+        CREATE TABLE IF NOT EXISTS quiz_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            character TEXT NOT NULL,
-            sense_id INTEGER NOT NULL DEFAULT 0,
-            mastery_level INTEGER DEFAULT 0,
-            correct_count INTEGER DEFAULT 0,
-            total_attempts INTEGER DEFAULT 0,
-            last_practiced INTEGER,
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            UNIQUE(user_id, character, sense_id)
+            word TEXT NOT NULL,
+            word_type TEXT,
+            quiz_mode TEXT,
+            quality INTEGER,
+            is_correct INTEGER DEFAULT 0,
+            interval_before REAL DEFAULT 0,
+            interval_after REAL DEFAULT 0,
+            easiness_before REAL DEFAULT 2.5,
+            easiness_after REAL DEFAULT 2.5,
+            score_before REAL DEFAULT 0,
+            score_after REAL DEFAULT 0,
+            session_id TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     `);
-
-    console.log('[DB] Sentences and sentence_progress tables initialized');
 
     // Save database
     saveDatabase();
     console.log('[DB] Database schema validated');
-
-    // Load sentences after database is initialized
-    loadTatoebaSentences();
 }
 
 // Save database helper
@@ -200,48 +213,6 @@ function saveDatabase() {
     const data = db.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(DB_PATH, buffer);
-}
-
-// Load sentences from Tatoeba data
-function loadTatoebaSentences() {
-    const sentencesPath = path.join(__dirname, 'data', 'tatoeba-sentences.json');
-
-    if (!fs.existsSync(sentencesPath)) {
-        console.log('[DB] No tatoeba-sentences.json found, skipping sentence import');
-        return;
-    }
-
-    try {
-        const sentencesData = JSON.parse(fs.readFileSync(sentencesPath, 'utf-8'));
-
-        // Check if sentences already loaded
-        const count = db.exec('SELECT COUNT(*) as count FROM sentences');
-        if (count.length > 0 && count[0][0] > 0) {
-            console.log('[DB] Sentences already loaded (' + count[0][0] + ' sentences), skipping import');
-            return;
-        }
-
-        let totalImported = 0;
-
-        for (const char in sentencesData) {
-            const charData = sentencesData[char];
-
-            if (charData.sentences && charData.sentences.length > 0) {
-                charData.sentences.forEach((sentence) => {
-                    db.run(
-                        'INSERT INTO sentences (character, sense_id, chinese, pinyin, english, difficulty) VALUES (?, ?, ?, ?, ?, ?)',
-                        [char, 0, sentence.chinese, sentence.pinyin || '', sentence.english, sentence.difficulty || 1]
-                    );
-                    totalImported++;
-                });
-            }
-        }
-
-        saveDatabase();
-        console.log('[DB] Imported ' + totalImported + ' sentences from Tatoeba');
-    } catch (error) {
-        console.error('[DB] Error loading Tatoeba sentences:', error);
-    }
 }
 
 // Ensure images directory exists
@@ -276,16 +247,32 @@ const upload = multer({
 
 // Load character list once at startup
 let characterList = null;
+let characterDataMap = null; // Full data: { [char]: { pinyin, meanings } }
 
 async function loadCharacterList() {
     try {
         const charFile = path.join(__dirname, 'data', 'characters.json');
         const data = JSON.parse(fs.readFileSync(charFile, 'utf8'));
         characterList = Object.keys(data);
+        characterDataMap = data;
         console.log('[DATA] Loaded', characterList.length, 'characters');
     } catch (error) {
         console.error('[DATA] Failed to load characters:', error);
         characterList = [];
+        characterDataMap = {};
+    }
+}
+
+// Load Make Me A Hanzi decomposition data
+let componentsData = null;
+function loadComponentsData() {
+    try {
+        const f = path.join(__dirname, 'components-data.json');
+        componentsData = JSON.parse(fs.readFileSync(f, 'utf8'));
+        console.log('[COMPONENTS] Loaded decomposition data for', Object.keys(componentsData).length, 'characters');
+    } catch (e) {
+        console.error('[COMPONENTS] Failed to load components-data.json:', e.message);
+        componentsData = {};
     }
 }
 
@@ -311,39 +298,6 @@ function determineBaseChars(word) {
 
 // Middleware
 app.use(express.json({ limit: '10mb' })); // Increased limit for large progress data
-// Request logging for debugging mobile app
-app.use((req, res, next) => {
-    const timestamp = new Date().toISOString();
-    const logEntry = `[${timestamp}] ${req.method} ${req.path}`;
-
-    // Log to console (appears in server.log)
-    console.log(logEntry);
-
-    // For important API calls, log more details
-    if (req.path.startsWith('/api/')) {
-        console.log(`  User-Agent: ${req.headers['user-agent']}`);
-        if (req.body && Object.keys(req.body).length > 0) {
-            // Don't log full progress data (too large), just show it exists
-            if (req.body.characterProgress || req.body.compoundProgress) {
-                console.log(`  Body: [Progress data - ${JSON.stringify(req.body).length} bytes]`);
-            } else {
-                console.log(`  Body:`, JSON.stringify(req.body).substring(0, 200));
-            }
-        }
-    }
-
-    next();
-});
-
-// Log response status  
-app.use((req, res, next) => {
-    const originalSend = res.send;
-    res.send = function(data) {
-        console.log(`  Response: ${res.statusCode}`);
-        originalSend.call(this, data);
-    };
-    next();
-});
 app.use(express.static('.'));
 app.use('/images', express.static(IMAGES_DIR)); // Serve uploaded images
 
@@ -363,8 +317,42 @@ app.use(function(req, res, next) {
     next();
 });
 
-// Session configuration (using memory store since connect-sqlite3 has issues with old Node)
+// Sessions live in the app's SQLite DB so logins survive restarts (MemoryStore dropped them all).
+// connect-sqlite3 doesn't work on the NAS's Node 12, hence this small store.
+class SqlSessionStore extends session.Store {
+    get(sid, cb) {
+        try {
+            const r = db.exec('SELECT data, expires FROM sessions WHERE sid = ?', [sid]);
+            if (!r.length || !r[0].values.length) return cb(null, null);
+            const row = r[0].values[0];
+            if (row[1] < Date.now()) return this.destroy(sid, function() { cb(null, null); });
+            cb(null, JSON.parse(row[0]));
+        } catch (e) { cb(e); }
+    }
+    set(sid, sess, cb) {
+        try {
+            const expires = sess.cookie && sess.cookie.expires ? new Date(sess.cookie.expires).getTime() : Date.now() + 86400000;
+            db.run('INSERT OR REPLACE INTO sessions (sid, data, expires) VALUES (?, ?, ?)', [sid, JSON.stringify(sess), expires]);
+            saveDatabase();
+            if (cb) cb(null);
+        } catch (e) { if (cb) cb(e); }
+    }
+    destroy(sid, cb) {
+        try {
+            db.run('DELETE FROM sessions WHERE sid = ?', [sid]);
+            saveDatabase();
+            if (cb) cb(null);
+        } catch (e) { if (cb) cb(e); }
+    }
+}
+
+function initSessions() {
+    db.run('CREATE TABLE IF NOT EXISTS sessions (sid TEXT PRIMARY KEY, data TEXT NOT NULL, expires INTEGER NOT NULL)');
+    db.run('DELETE FROM sessions WHERE expires < ?', [Date.now()]);
+}
+
 app.use(session({
+    store: new SqlSessionStore(),
     secret: 'chinese-word-map-secret-key-change-in-production',
     resave: false,
     saveUninitialized: false,
@@ -665,8 +653,8 @@ app.post('/api/auth/login', function(req, res) {
     }
 
     try {
-        // Get user
-        const result = db.exec('SELECT id, username, password_hash, is_admin, can_edit_definitions, can_upload_images FROM users WHERE username = ?', [username]);
+        // Get user (including is_admin field)
+        const result = db.exec('SELECT id, username, password_hash, is_admin FROM users WHERE username = ?', [username]);
 
         if (result.length === 0 || result[0].values.length === 0) {
             return res.status(401).json({
@@ -679,7 +667,7 @@ app.post('/api/auth/login', function(req, res) {
         const userId = row[0];
         const user = row[1];
         const hash = row[2];
-        const isAdmin = row[3] === 1 || row[4] === 1 || row[5] === 1;  // is_admin OR can_edit_definitions OR can_upload_images
+        const isAdmin = row[3] === 1;
 
         // Verify password (synchronously for compatibility)
         const match = bcrypt.compareSync(password, hash);
@@ -701,12 +689,20 @@ app.post('/api/auth/login', function(req, res) {
 
         // Generate token for mobile app (expires in 30 days)
         const token = generateToken();
+        const tokenExpires = Date.now() + (30 * 24 * 60 * 60 * 1000);
         authTokens.set(token, {
             userId: userId,
             username: user,
-            isAdmin: isAdmin,
-            expires: Date.now() + (30 * 24 * 60 * 60 * 1000) // 30 days
+            expires: tokenExpires
         });
+        // Persist token so it survives server restarts
+        try {
+            db.run('INSERT OR REPLACE INTO auth_tokens (token, user_id, username, is_admin, expires, created_at) VALUES (?,?,?,?,?,?)',
+                [token, userId, user, isAdmin ? 1 : 0, tokenExpires, Date.now()]);
+            saveDatabase();
+        } catch(e) {
+            console.error('[AUTH] Failed to persist token:', e.message);
+        }
 
         console.log('[AUTH] User logged in:', user);
 
@@ -747,73 +743,6 @@ app.post('/api/auth/logout', function(req, res) {
     });
 });
 
-// Change password for logged-in user
-app.post('/api/auth/change-password', requireAuth, function(req, res) {
-    try {
-        const oldPassword = req.body.oldPassword;
-        const newPassword = req.body.newPassword;
-        const userId = req.userId;
-
-        if (!oldPassword || !newPassword) {
-            return res.status(400).json({
-                success: false,
-                message: 'Both old and new passwords are required'
-            });
-        }
-
-        if (newPassword.length < 6) {
-            return res.status(400).json({
-                success: false,
-                message: 'New password must be at least 6 characters'
-            });
-        }
-
-        // Get current user data
-        const userResult = db.exec('SELECT password FROM users WHERE id = ?', [userId]);
-
-        if (!userResult.length || !userResult[0].values.length) {
-            return res.status(404).json({
-                success: false,
-                message: 'User not found'
-            });
-        }
-
-        const currentPasswordHash = userResult[0].values[0][0];
-
-        // Verify old password
-        const isMatch = bcrypt.compareSync(oldPassword, currentPasswordHash);
-
-        if (!isMatch) {
-            return res.status(401).json({
-                success: false,
-                message: 'Current password is incorrect'
-            });
-        }
-
-        // Hash new password
-        const newPasswordHash = bcrypt.hashSync(newPassword, 10);
-
-        // Update password
-        db.exec(
-            'UPDATE users SET password = ? WHERE id = ?',
-            [newPasswordHash, userId]
-        );
-
-        console.log('[AUTH] Password changed for user ID:', userId);
-
-        res.json({
-            success: true,
-            message: 'Password changed successfully'
-        });
-    } catch (error) {
-        console.error('[AUTH] Change password error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error'
-        });
-    }
-});
-
 // Get user progress
 app.get('/api/progress', requireAuth, function(req, res) {
     try {
@@ -823,10 +752,10 @@ app.get('/api/progress', requireAuth, function(req, res) {
         if (result.length > 0 && result[0].values.length > 0) {
             const progressData = JSON.parse(result[0].values[0][0]);
             console.log('[PROGRESS] Loaded progress for user', req.username);
-            res.json(progressData);
+            res.json(mergePpWords(userId, progressData));
         } else {
             console.log('[PROGRESS] No existing progress for user', req.username);
-            res.json({ compoundProgress: {} });
+            res.json(mergePpWords(userId, { compoundProgress: {} }));
         }
 
     } catch (error) {
@@ -1988,6 +1917,180 @@ function extractKnownWords(progressData) {
     return Array.from(knownSet);
 }
 
+// POST /api/quiz-history — log a single quiz attempt
+app.post('/api/quiz-history', requireAuth, function(req, res) {
+    try {
+        var userId = req.userId;
+        var b = req.body;
+        db.run(
+            `INSERT INTO quiz_history
+             (user_id, word, word_type, quiz_mode, quality, is_correct,
+              interval_before, interval_after, easiness_before, easiness_after,
+              score_before, score_after, session_id)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            [
+                userId,
+                b.word || '',
+                b.wordType || 'character',
+                b.quizMode || 'pinyin',
+                b.quality != null ? b.quality : 0,
+                b.isCorrect ? 1 : 0,
+                b.intervalBefore || 0,
+                b.intervalAfter || 0,
+                b.easinessBefore != null ? b.easinessBefore : 2.5,
+                b.easinessAfter != null ? b.easinessAfter : 2.5,
+                b.scoreBefore || 0,
+                b.scoreAfter || 0,
+                b.sessionId || null
+            ]
+        );
+        saveDatabase();
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[HISTORY] Log error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /api/quiz-history — paginated history for the current user
+app.get('/api/quiz-history', requireAuth, function(req, res) {
+    try {
+        var userId = req.userId;
+        var limit = Math.min(parseInt(req.query.limit) || 50, 200);
+        var offset = parseInt(req.query.offset) || 0;
+        var word = req.query.word;
+        var mode = req.query.mode;
+        var startDate = req.query.startDate ? parseInt(req.query.startDate) : null;
+        var endDate = req.query.endDate ? parseInt(req.query.endDate) : null;
+
+        var where = ['user_id = ?'];
+        var params = [userId];
+
+        if (word) { where.push('word = ?'); params.push(word); }
+        if (mode) { where.push('quiz_mode = ?'); params.push(mode); }
+        if (startDate) { where.push("created_at >= datetime(?, 'unixepoch', 'localtime')"); params.push(Math.floor(startDate / 1000)); }
+        if (endDate) { where.push("created_at <= datetime(?, 'unixepoch', 'localtime')"); params.push(Math.floor(endDate / 1000)); }
+
+        var whereSQL = 'WHERE ' + where.join(' AND ');
+
+        // Total count
+        var countResult = db.exec(
+            'SELECT COUNT(*) FROM quiz_history ' + whereSQL,
+            params
+        );
+        var total = (countResult.length > 0 && countResult[0].values.length > 0)
+            ? countResult[0].values[0][0]
+            : 0;
+
+        // Rows
+        var rowResult = db.exec(
+            'SELECT id, word, word_type, quiz_mode, quality, is_correct, ' +
+            'interval_before, interval_after, easiness_before, easiness_after, ' +
+            'score_before, score_after, session_id, ' +
+            "(strftime('%s', created_at) * 1000) as createdAt " +
+            'FROM quiz_history ' + whereSQL +
+            ' ORDER BY created_at DESC LIMIT ? OFFSET ?',
+            [...params, limit, offset]
+        );
+
+        var history = [];
+        if (rowResult.length > 0) {
+            var cols = rowResult[0].columns;
+            rowResult[0].values.forEach(function(row) {
+                var obj = {};
+                cols.forEach(function(col, i) { obj[col] = row[i]; });
+                history.push(obj);
+            });
+        }
+
+        res.json({ success: true, history: history, total: total });
+    } catch (error) {
+        console.error('[HISTORY] Get error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /api/quiz-history/export — download history as CSV
+app.get('/api/quiz-history/export', requireAuth, function(req, res) {
+    try {
+        var userId = req.userId;
+        var word = req.query.word;
+        var mode = req.query.mode;
+        var startDate = req.query.startDate ? parseInt(req.query.startDate) : null;
+        var endDate = req.query.endDate ? parseInt(req.query.endDate) : null;
+
+        var where = ['user_id = ?'];
+        var params = [userId];
+
+        if (word) { where.push('word = ?'); params.push(word); }
+        if (mode) { where.push('quiz_mode = ?'); params.push(mode); }
+        if (startDate) { where.push("created_at >= datetime(?, 'unixepoch', 'localtime')"); params.push(Math.floor(startDate / 1000)); }
+        if (endDate) { where.push("created_at <= datetime(?, 'unixepoch', 'localtime')"); params.push(Math.floor(endDate / 1000)); }
+
+        var whereSQL = 'WHERE ' + where.join(' AND ');
+
+        var rowResult = db.exec(
+            'SELECT id, word, word_type, quiz_mode, quality, is_correct, ' +
+            'interval_before, interval_after, easiness_before, easiness_after, ' +
+            'score_before, score_after, session_id, created_at ' +
+            'FROM quiz_history ' + whereSQL +
+            ' ORDER BY created_at DESC',
+            params
+        );
+
+        var rows = [];
+        if (rowResult.length > 0) {
+            var cols = rowResult[0].columns;
+            rowResult[0].values.forEach(function(row) {
+                var obj = {};
+                cols.forEach(function(col, i) { obj[col] = row[i]; });
+                rows.push(obj);
+            });
+        }
+
+        var csvLines = ['id,word,word_type,quiz_mode,quality,is_correct,interval_before,interval_after,easiness_before,easiness_after,score_before,score_after,session_id,created_at'];
+        rows.forEach(function(r) {
+            csvLines.push([
+                r.id, r.word, r.word_type, r.quiz_mode, r.quality, r.is_correct,
+                r.interval_before, r.interval_after,
+                r.easiness_before, r.easiness_after,
+                r.score_before, r.score_after,
+                r.session_id || '', r.created_at
+            ].join(','));
+        });
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="quiz-history.csv"');
+        res.send(csvLines.join('\n'));
+    } catch (error) {
+        console.error('[HISTORY] Export error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Character decomposition endpoint — returns direct components of a character
+app.get('/api/decompose/:char', requireAuth, function(req, res) {
+    var char = req.params.char;
+    if (!componentsData) {
+        return res.json({ success: true, char: char, components: [] });
+    }
+    var entry = componentsData[char];
+    if (!entry || !entry.components || entry.components.length === 0) {
+        return res.json({ success: true, char: char, components: [] });
+    }
+    var components = entry.components.map(function(comp) {
+        // Prefer characters.json (app's own data); fall back to Make Me A Hanzi
+        var appEntry = characterDataMap && characterDataMap[comp];
+        var dictEntry = componentsData[comp];
+        return {
+            char: comp,
+            pinyin: (appEntry && appEntry.pinyin) || (dictEntry && dictEntry.pinyin) || null,
+            meaning: (appEntry && appEntry.meanings && appEntry.meanings[0]) || (dictEntry && dictEntry.meaning) || null,
+        };
+    });
+    res.json({ success: true, char: char, components: components });
+});
+
 // Export known words for Chrome extension (requires sync token)
 app.get('/api/export-known-words', verifySyncToken, function(req, res) {
     try {
@@ -2020,196 +2123,372 @@ app.get('/api/export-known-words', verifySyncToken, function(req, res) {
     }
 });
 
-// ===== SENTENCE PRACTICE API ENDPOINTS =====
+// ============================================
+// PhrasePump Subs (YouTube extension) — /api/pp/*
+// Kept apart from /api/translate etc. because the extension expects different shapes.
+// ============================================
+function initPhrasePump() {
+    db.run('CREATE TABLE IF NOT EXISTS pp_words (user_id INTEGER NOT NULL, word TEXT NOT NULL, known INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (user_id, word))');
+}
 
-// GET /api/sentences/:char - Get sentences for a character
-app.get('/api/sentences/:char', requireAuth, function(req, res) {
+const HAN_RE = /[㐀-鿿]/;
+
+function ppWordRows(userId) {
+    const result = db.exec('SELECT word, known FROM pp_words WHERE user_id = ?', [userId]);
+    return result.length ? result[0].values : [];
+}
+
+// The extension never writes the progress blob: the app POSTs the whole blob from its own copy and would erase it.
+// Instead, extension words are merged in on read, and the app saves them on its next sync.
+// shortcut: un-marking in the extension can't remove a word the app has already saved; needs per-word timestamps in progress.
+function mergePpWords(userId, progress) {
+    progress.characterProgress = progress.characterProgress || {};
+    progress.compoundProgress = progress.compoundProgress || {};
+    ppWordRows(userId).forEach(function(row) {
+        const word = row[0];
+        if (row[1] !== 1) return;
+        if (word.length === 1) {
+            progress.characterProgress[word] = Object.assign({}, progress.characterProgress[word], { known: true });
+            return;
+        }
+        // The app shows a compound under each character whose compound list contains it.
+        parseCharacters(word).forEach(function(c) {
+            const data = characterDataMap && characterDataMap[c];
+            if (!data || !Array.isArray(data.compounds)) return;
+            if (!data.compounds.some(function(x) { return x.word === word; })) return;
+            const entry = progress.compoundProgress[c] = progress.compoundProgress[c] || { known: [], total: 0, quizScores: {} };
+            entry.known = entry.known || [];
+            if (entry.known.indexOf(word) === -1) entry.known.push(word);
+        });
+    });
+    return progress;
+}
+
+function loadProgress(userId) {
+    const result = db.exec('SELECT data FROM progress WHERE user_id = ?', [userId]);
+    return result.length && result[0].values.length ? JSON.parse(result[0].values[0][0]) : {};
+}
+
+// Known words for subtitle highlighting: app progress + extension marks, extension un-marks win.
+app.get('/api/pp/words', requireAuth, function(req, res) {
     try {
-        const char = req.params.char;
+        const progress = loadProgress(req.userId);
+        const known = new Set(extractKnownWords(progress));
+        Object.keys(progress.characterProgress || {}).forEach(function(c) {
+            if (progress.characterProgress[c] && progress.characterProgress[c].known) known.add(c);
+        });
+        ppWordRows(req.userId).forEach(function(row) {
+            if (row[1] === 1) known.add(row[0]); else known.delete(row[0]);
+        });
+        const words = {};
+        known.forEach(function(w) { words[w] = { status: 'known' }; });
+        res.json({ words: words });
+    } catch (error) {
+        console.error('[PP] Words load error:', error);
+        res.status(500).json({ error: 'Failed to load words' });
+    }
+});
 
-        // Get all sentences for this character
-        const sentencesResult = db.exec(
-            'SELECT id, sense_id, sense_meaning, chinese, pinyin, english, difficulty FROM sentences WHERE character = ?',
-            [char]
-        );
+app.post('/api/pp/words', requireAuth, function(req, res) {
+    const word = typeof req.body.word === 'string' ? req.body.word.trim().slice(0, 50) : '';
+    if (!word || !HAN_RE.test(word)) return res.status(400).json({ error: 'Chinese word required' });
+    if (typeof req.body.known !== 'boolean') return res.status(400).json({ error: 'known must be boolean' });
+    try {
+        db.run('INSERT OR REPLACE INTO pp_words (user_id, word, known, updated_at, status) VALUES (?, ?, ?, ?, ?)',
+            [req.userId, word, req.body.known ? 1 : 0, Date.now(), req.body.known ? 'known' : 'unknown']);
+        saveDatabase();
+        const count = db.exec('SELECT COUNT(*) FROM pp_words WHERE user_id = ? AND known = 1', [req.userId])[0].values[0][0];
+        res.json({ word: word, known: req.body.known, count: count });
+    } catch (error) {
+        console.error('[PP] Word save error:', error);
+        res.status(500).json({ error: 'Failed to save word' });
+    }
+});
 
-        const sentences = sentencesResult.length > 0 ? sentencesResult[0].values : [];
+// Subtitle lines repeat a lot; cache to stay under Google's rate limit.
+const ppTranslateCache = new Map();
+async function ppTranslate(text, to) {
+    const key = to + ':' + text;
+    if (ppTranslateCache.has(key)) return ppTranslateCache.get(key);
+    let out = '';
+    try {
+        out = (await translate(text, { to: to })).text || '';
+    } catch (error) {
+        console.error('[PP] Translate error:', error.message);
+    }
+    if (out) {
+        if (ppTranslateCache.size >= 5000) ppTranslateCache.delete(ppTranslateCache.keys().next().value);
+        ppTranslateCache.set(key, out);
+    }
+    return out;
+}
 
-        // Get user's progress for each sense
-        const userId = req.session.userId;
-        const progressResult = db.exec(
-            'SELECT sense_id, mastery_level, correct_count, total_attempts FROM sentence_progress WHERE user_id = ? AND character = ?',
-            [userId, char]
-        );
+app.post('/api/pp/translate', requireAuth, async function(req, res) {
+    const text = typeof req.body.text === 'string' ? req.body.text.trim().slice(0, 500) : '';
+    const to = req.body.to || 'en';
+    if (!text) return res.status(400).json({ error: 'text required' });
+    if (to !== 'en' && to !== 'zh-CN') return res.status(400).json({ error: 'to must be en or zh-CN' });
+    const out = await ppTranslate(text, to);
+    res.json({ text: out, en: to === 'en' ? out : '' });
+});
 
-        const progress = progressResult.length > 0 ? progressResult[0].values : [];
+// Saved subtitle lines become the user's own sentences, which the app's sentence practice already reads.
+app.post('/api/pp/phrases', requireAuth, async function(req, res) {
+    const zh = typeof req.body.zh === 'string' ? req.body.zh.trim().slice(0, 500) : '';
+    if (!zh) return res.status(400).json({ error: 'zh required' });
+    try {
+        const existing = db.exec('SELECT id FROM user_sentences WHERE user_id = ? AND chinese = ?', [req.userId, zh]);
+        if (existing.length && existing[0].values.length) return res.json({ created: false });
+        let en = typeof req.body.en === 'string' ? req.body.en.trim().slice(0, 1000) : '';
+        if (!en) en = await ppTranslate(zh, 'en');
+        const py = pinyin(zh, { toneType: 'symbol', nonZh: 'consecutive' }).replace(/\s+([，。！？、；：,.!?;:])/g, '$1');
+        // Re-check after the await so two quick saves of one line don't duplicate.
+        const dup = db.exec('SELECT id FROM user_sentences WHERE user_id = ? AND chinese = ?', [req.userId, zh]);
+        if (dup.length && dup[0].values.length) return res.json({ created: false });
+        db.run('INSERT INTO user_sentences (user_id, chinese, pinyin, english) VALUES (?, ?, ?, ?)',
+            [req.userId, zh, py, en || '(no translation)']);
+        saveDatabase();
+        console.log('[PP] Saved phrase for user', req.username);
+        res.status(201).json({ created: true });
+    } catch (error) {
+        console.error('[PP] Phrase save error:', error);
+        res.status(500).json({ error: 'Failed to save phrase' });
+    }
+});
 
-        // Format sentences grouped by sense
-        const senseMap = {};
+// ============================================
+// Daily sentence mode ("pump") — /api/pump/*
+// Language-Reactor-style: one target word per sentence, pinyin over each word, tap words to set status.
+// Corpus is built offline by chinese-word-map-app/scripts/build-sentence-corpus.mjs (Tatoeba + CC-CEDICT).
+// Word status lives in pp_words, shared with the PhrasePump extension (known column = known or ignored).
+// ============================================
+const PUMP_GOAL = 60;
+const PUMP_NEW_PER_DAY = 10;
+const DAY_MS = 86400000;
+const PUMP_STATUSES = ['known', 'learning', 'ignored', 'unknown'];
+let corpus = { words: {}, s: [] };
+const wordIndex = new Map(); // word -> positions in corpus.s, shortest sentence first
+const corpusById = new Map();
 
-        sentences.forEach(function(row) {
-            const id = row[0];
-            const senseId = row[1];
-            const senseMeaning = row[2];
-            const chinese = row[3];
-            const pinyin = row[4];
-            const english = row[5];
-            const difficulty = row[6];
-
-            if (!senseMap[senseId]) {
-                senseMap[senseId] = {
-                    senseId: senseId,
-                    meaning: senseMeaning || 'General usage',
-                    sentences: [],
-                    mastery: 0,
-                    correct: 0,
-                    total: 0
-                };
-            }
-
-            senseMap[senseId].sentences.push({
-                id: id,
-                chinese: chinese,
-                pinyin: pinyin,
-                english: english,
-                difficulty: difficulty
+function loadCorpus() {
+    try {
+        corpus = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'sentence-corpus.json'), 'utf8'));
+        corpus.s.forEach(function(s, i) {
+            corpusById.set(s[0], s);
+            s[3].forEach(function(t) {
+                if (!Array.isArray(t)) return;
+                const list = wordIndex.get(t[0]) || [];
+                if (list[list.length - 1] !== i) list.push(i);
+                wordIndex.set(t[0], list);
             });
         });
-
-        // Add progress data
-        progress.forEach(function(row) {
-            const senseId = row[0];
-            const masteryLevel = row[1];
-            const correctCount = row[2];
-            const totalAttempts = row[3];
-            if (senseMap[senseId]) {
-                senseMap[senseId].mastery = masteryLevel;
-                senseMap[senseId].correct = correctCount;
-                senseMap[senseId].total = totalAttempts;
-            }
+        wordIndex.forEach(function(list) {
+            list.sort(function(a, b) { return corpus.s[a][1].length - corpus.s[b][1].length; });
         });
-
-        const senses = Object.keys(senseMap).map(function(key) {
-            return senseMap[key];
-        });
-
-        res.json({
-            success: true,
-            character: char,
-            senses: senses
-        });
+        console.log('[PUMP] Loaded', corpus.s.length, 'sentences,', wordIndex.size, 'words');
     } catch (error) {
-        console.error('[API] Get sentences error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
+        console.error('[PUMP] Failed to load sentence corpus:', error.message);
+    }
+}
+
+function initPump() {
+    const cols = db.exec('PRAGMA table_info(pp_words)')[0].values.map(function(r) { return r[1]; });
+    [['status', 'TEXT'], ['due', 'INTEGER'], ['interval', 'REAL'], ['ease', 'REAL'], ['reps', 'INTEGER'], ['lapses', 'INTEGER']].forEach(function(c) {
+        if (cols.indexOf(c[0]) === -1) db.run('ALTER TABLE pp_words ADD COLUMN ' + c[0] + ' ' + c[1]);
+    });
+    db.run("UPDATE pp_words SET status = CASE known WHEN 1 THEN 'known' ELSE 'unknown' END WHERE status IS NULL");
+    db.run('CREATE TABLE IF NOT EXISTS pump_days (user_id INTEGER NOT NULL, day TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, new_words INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (user_id, day))');
+    db.run('CREATE TABLE IF NOT EXISTS pump_seen (user_id INTEGER NOT NULL, sentence_id INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (user_id, sentence_id))');
+}
+
+// Same scheduler as phrasepump/srs.js, in Node 12 syntax.
+function srsSchedule(card, grade, now) {
+    const next = Object.assign({}, card);
+    const ease = card.ease || 2.5, reps = card.reps || 0, interval = card.interval || 0;
+    if (grade === 'again') {
+        next.lapses = (card.lapses || 0) + 1;
+        next.ease = Math.max(1.3, ease - 0.2);
+        next.interval = 0;
+        next.reps = Math.max(0, reps - 1);
+        next.due = now + 10 * 60000;
+        return next;
+    }
+    if (grade === 'good') {
+        next.interval = reps ? Math.max(1, Math.round(interval * ease)) : 1;
+        next.ease = ease;
+    } else {
+        next.interval = reps ? Math.max(2, Math.round(interval * ease * 1.3)) : 2;
+        next.ease = Math.min(2.8, ease + 0.15);
+    }
+    next.reps = reps + 1;
+    next.due = now + next.interval * DAY_MS;
+    return next;
+}
+
+// shortcut: the daily count resets at UTC midnight, which is UK midnight in winter and 1am in summer; store a user timezone if that matters.
+function pumpToday() { return new Date().toISOString().slice(0, 10); }
+
+function pumpDay(userId) {
+    const r = db.exec('SELECT done, new_words FROM pump_days WHERE user_id = ? AND day = ?', [userId, pumpToday()]);
+    return r.length && r[0].values.length ? { done: r[0].values[0][0], newWords: r[0].values[0][1] } : { done: 0, newWords: 0 };
+}
+
+// Word -> status from ZhongMap progress, overridden by explicit pp_words rows; plus SRS state for learning words.
+function userWords(userId) {
+    const status = new Map();
+    const srs = new Map();
+    const progress = loadProgress(userId);
+    extractKnownWords(progress).forEach(function(w) { status.set(w, 'known'); });
+    Object.keys(progress.characterProgress || {}).forEach(function(c) {
+        if (progress.characterProgress[c] && progress.characterProgress[c].known) status.set(c, 'known');
+    });
+    const r = db.exec('SELECT word, status, due, interval, ease, reps, lapses FROM pp_words WHERE user_id = ?', [userId]);
+    (r.length ? r[0].values : []).forEach(function(row) {
+        status.set(row[0], row[1]);
+        srs.set(row[0], { due: row[2], interval: row[3], ease: row[4], reps: row[5], lapses: row[6] });
+    });
+    return { status: status, srs: srs };
+}
+
+const isKnownish = function(s) { return s === 'known' || s === 'ignored'; };
+
+// The sentence for a target word with the fewest other words you don't know yet.
+function pickSentence(word, status, exclude) {
+    const list = wordIndex.get(word) || [];
+    let best = null, bestUnknown = Infinity;
+    for (let i = 0; i < list.length && i < 400; i++) {
+        const s = corpus.s[list[i]];
+        if (exclude.has(s[0])) continue;
+        let unknown = 0;
+        s[3].forEach(function(t) { if (Array.isArray(t) && t[0] !== word && !isKnownish(status.get(t[0]))) unknown++; });
+        if (unknown < bestUnknown) { best = s; bestUnknown = unknown; if (unknown === 0) break; }
+    }
+    return best;
+}
+
+function pumpCard(s, target, status, kind) {
+    return {
+        id: s[0], zh: s[1], en: s[2], target: target, kind: kind,
+        tokens: s[3].map(function(t) {
+            if (!Array.isArray(t)) return { t: t };
+            const meta = corpus.words[t[0]];
+            return { w: t[0], p: t[1], s: status.get(t[0]) || 'new', m: meta ? meta[1] : '' };
+        })
+    };
+}
+
+// Next batch: due learning words, then up to PUMP_NEW_PER_DAY new words by frequency, then extra practice of learning words.
+app.get('/api/pump/next', requireAuth, function(req, res) {
+    try {
+        const limit = Math.min(20, Math.max(1, parseInt(req.query.limit, 10) || 10));
+        const now = Date.now();
+        const u = userWords(req.userId);
+        const day = pumpDay(req.userId);
+        const seenRows = db.exec('SELECT sentence_id FROM pump_seen WHERE user_id = ? AND at > ?', [req.userId, now - 30 * DAY_MS]);
+        const exclude = new Set(seenRows.length ? seenRows[0].values.map(function(r) { return r[0]; }) : []);
+        const cards = [];
+        const used = new Set();
+        function add(word, kind) {
+            if (cards.length >= limit || used.has(word)) return;
+            const s = pickSentence(word, u.status, exclude);
+            if (!s) return;
+            used.add(word);
+            exclude.add(s[0]);
+            cards.push(pumpCard(s, word, u.status, kind));
+        }
+        const learning = [];
+        u.status.forEach(function(st, w) { if (st === 'learning') learning.push(w); });
+        learning.sort(function(a, b) { return (u.srs.get(a).due || 0) - (u.srs.get(b).due || 0); });
+        learning.filter(function(w) { return (u.srs.get(w).due || 0) <= now; }).forEach(function(w) { add(w, 'review'); });
+
+        let newLeft = PUMP_NEW_PER_DAY - day.newWords;
+        const words = Object.keys(corpus.words); // already in frequency order
+        for (let i = 0; i < words.length && newLeft > 0 && cards.length < limit; i++) {
+            const st = u.status.get(words[i]);
+            if (st && st !== 'unknown') continue;
+            const before = cards.length;
+            add(words[i], 'new');
+            if (cards.length > before) newLeft--;
+        }
+        // Daily goal not met and nothing due: more sentences for words you're learning.
+        if (day.done + cards.length < PUMP_GOAL) learning.forEach(function(w) { add(w, 'extra'); });
+
+        res.json({ cards: cards, done: day.done, goal: PUMP_GOAL, newToday: day.newWords, newPerDay: PUMP_NEW_PER_DAY });
+    } catch (error) {
+        console.error('[PUMP] Next error:', error);
+        res.status(500).json({ error: 'Failed to load sentences' });
     }
 });
 
-// POST /api/sentences/practice - Record practice session
+// One POST per card: the grade for the target word plus any word statuses tapped on that card (one DB write).
+app.post('/api/pump/answer', requireAuth, function(req, res) {
+    const body = req.body || {};
+    const s = corpusById.get(Number(body.sentenceId));
+    const target = typeof body.target === 'string' ? body.target : '';
+    const grade = body.grade;
+    const marks = body.words && typeof body.words === 'object' ? body.words : {};
+    if (!s || !target) return res.status(400).json({ error: 'sentenceId and target required' });
+    if (['again', 'good', 'easy', null, undefined].indexOf(grade) === -1) return res.status(400).json({ error: 'grade must be again, good or easy' });
+    try {
+        const now = Date.now();
+        const u = userWords(req.userId);
+        const wasNew = !u.status.has(target) || u.status.get(target) === 'unknown';
+        function save(word, status, card) {
+            db.run('INSERT OR REPLACE INTO pp_words (user_id, word, known, updated_at, status, due, interval, ease, reps, lapses) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [req.userId, word, isKnownish(status) ? 1 : 0, now, status, card.due || null, card.interval || null, card.ease || null, card.reps || null, card.lapses || null]);
+        }
+        Object.keys(marks).slice(0, 50).forEach(function(w) {
+            if (w.length > 50 || !HAN_RE.test(w) || PUMP_STATUSES.indexOf(marks[w]) === -1) return;
+            const card = marks[w] === 'learning' ? (u.srs.get(w) && u.srs.get(w).due ? u.srs.get(w) : { due: now }) : {};
+            save(w, marks[w], card);
+        });
+        if (!marks[target] && grade) {
+            const card = u.srs.get(target) || {};
+            // Extra practice of a not-yet-due word only counts if you forgot it.
+            const next = body.kind === 'extra' && grade !== 'again' && card.due ? card : srsSchedule(card, grade, now);
+            save(target, 'learning', next);
+        }
+        db.run('INSERT OR REPLACE INTO pump_seen (user_id, sentence_id, at) VALUES (?, ?, ?)', [req.userId, s[0], now]);
+        const day = pumpDay(req.userId);
+        db.run('INSERT OR REPLACE INTO pump_days (user_id, day, done, new_words) VALUES (?, ?, ?, ?)',
+            [req.userId, pumpToday(), day.done + 1, day.newWords + (wasNew ? 1 : 0)]);
+        saveDatabase();
+        res.json({ done: day.done + 1, goal: PUMP_GOAL, newToday: day.newWords + (wasNew ? 1 : 0) });
+    } catch (error) {
+        console.error('[PUMP] Answer error:', error);
+        res.status(500).json({ error: 'Failed to save answer' });
+    }
+});
+
+// Compat for CharacterDetail / SentencePractice, which call routes from a patch that was never applied.
+app.get('/api/sentences/:char', requireAuth, function(req, res) {
+    const ch = req.params.char;
+    const found = [];
+    for (let i = 0; i < corpus.s.length && found.length < 15; i++) {
+        const s = corpus.s[i];
+        if (s[1].indexOf(ch) !== -1) found.push({
+            id: s[0], chinese: s[1], english: s[2],
+            pinyin: s[3].map(function(t) { return Array.isArray(t) ? t[1] : t; }).join(' ')
+        });
+    }
+    const data = characterDataMap && characterDataMap[ch];
+    res.json({ success: true, senses: [{ senseId: 0, meaning: data && data.meanings ? data.meanings[0] : '', mastery: 0, sentences: found }] });
+});
+
 app.post('/api/sentences/practice', requireAuth, function(req, res) {
-    try {
-        const character = req.body.character;
-        const senseId = req.body.senseId;
-        const results = req.body.results;
-        // results = [{ sentenceId, correct: true/false }, ...]
-
-        if (!character || senseId === undefined || !results || !Array.isArray(results)) {
-            return res.status(400).json({ success: false, message: 'Invalid request' });
-        }
-
-        const userId = req.session.userId;
-
-        // Calculate results
-        const correctCount = results.filter(function(r) { return r.correct; }).length;
-        const totalAttempts = results.length;
-
-        // Get current progress
-        const current = db.exec(
-            'SELECT correct_count, total_attempts, mastery_level FROM sentence_progress WHERE user_id = ? AND character = ? AND sense_id = ?',
-            [userId, character, senseId]
-        );
-
-        let newCorrect, newTotal, newMastery;
-
-        if (current.length > 0) {
-            // Update existing
-            const oldCorrect = current[0][0];
-            const oldTotal = current[0][1];
-            const oldMastery = current[0][2];
-            newCorrect = oldCorrect + correctCount;
-            newTotal = oldTotal + totalAttempts;
-
-            // Calculate new mastery (0-5 stars)
-            const accuracy = newCorrect / newTotal;
-            newMastery = Math.min(5, Math.floor(accuracy * 6)); // 0-5 stars
-
-            db.run(
-                'UPDATE sentence_progress SET correct_count = ?, total_attempts = ?, mastery_level = ?, last_practiced = ? WHERE user_id = ? AND character = ? AND sense_id = ?',
-                [newCorrect, newTotal, newMastery, Math.floor(Date.now() / 1000), userId, character, senseId]
-            );
-        } else {
-            // Create new
-            newCorrect = correctCount;
-            newTotal = totalAttempts;
-            const accuracy = newCorrect / newTotal;
-            newMastery = Math.min(5, Math.floor(accuracy * 6));
-
-            db.run(
-                'INSERT INTO sentence_progress (user_id, character, sense_id, correct_count, total_attempts, mastery_level, last_practiced) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                [userId, character, senseId, newCorrect, newTotal, newMastery, Math.floor(Date.now() / 1000)]
-            );
-        }
-
-        saveDatabase();
-
-        res.json({
-            success: true,
-            mastery: newMastery,
-            correct: newCorrect,
-            total: newTotal
-        });
-    } catch (error) {
-        console.error('[API] Practice session error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
-});
-
-// POST /api/sentences (admin only) - Add custom sentence
-app.post('/api/sentences', requireAuth, function(req, res) {
-    try {
-        const character = req.body.character;
-        const senseId = req.body.senseId;
-        const senseMeaning = req.body.senseMeaning;
-        const chinese = req.body.chinese;
-        const pinyin = req.body.pinyin;
-        const english = req.body.english;
-        const difficulty = req.body.difficulty;
-
-        // Check if user is admin
-        const userId = req.session.userId;
-        const result = db.exec('SELECT is_admin, can_edit_definitions FROM users WHERE id = ?', [userId]);
-        if (!result.length || (result[0][0] !== 1 && result[0][1] !== 1)) {
-            return res.status(403).json({ success: false, message: 'Admin permission required' });
-        }
-
-        db.run(
-            'INSERT INTO sentences (character, sense_id, sense_meaning, chinese, pinyin, english, difficulty, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [character, senseId || 0, senseMeaning || '', chinese, pinyin || '', english, difficulty || 1, 'custom']
-        );
-
-        saveDatabase();
-
-        res.json({ success: true, message: 'Sentence added' });
-    } catch (error) {
-        console.error('[API] Add sentence error:', error);
-        res.status(500).json({ success: false, message: 'Server error' });
-    }
+    res.json({ success: true, mastery: 0 });
 });
 
 // Start server
 async function start() {
     try {
         await initDatabase();
+        initPhrasePump();
+        initPump();
+        initSessions();
+        loadCorpus();
         await loadCharacterList();
+        loadComponentsData();
 
         app.listen(PORT, function() {
             console.log('\n========================================');
