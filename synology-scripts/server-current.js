@@ -2234,13 +2234,9 @@ function ppCacheSet(key, value) {
 
 // A whole caption track at once: one Google call per line takes ~2.5 s from the NAS, but 40-50 lines
 // joined by newlines take about the same, so lines go in chunks and come back split on the newlines.
-app.post('/api/pp/translate-batch', requireAuth, async function(req, res) {
-    const to = req.body.to || 'en';
-    if (to !== 'en' && to !== 'zh-CN') return res.status(400).json({ error: 'to must be en or zh-CN' });
-    if (!Array.isArray(req.body.texts)) return res.status(400).json({ error: 'texts must be an array' });
-    const texts = req.body.texts.slice(0, 200).map(function(t) {
-        return typeof t === 'string' ? t.replace(/\s+/g, ' ').trim().slice(0, 500) : '';
-    });
+// Translates many texts in chunks of up to 50 lines joined by newlines, split back afterwards.
+// oneByOne: if a chunk's line breaks don't survive, translate that chunk line by line (slow: ~2.5 s a line).
+async function ppTranslateMany(texts, to, oneByOne) {
     const out = texts.map(function(t) { return ppTranslateCache.get(to + ':' + t) || ''; });
     const chunks = [];
     let chunk = [], length = 0;
@@ -2261,12 +2257,43 @@ app.post('/api/pp/translate-batch', requireAuth, async function(req, res) {
         }
         if (parts.length === ids.length) {
             ids.forEach(function(i, k) { out[i] = parts[k].trim(); ppCacheSet(to + ':' + texts[i], out[i]); });
-        } else {
-            // Line breaks didn't survive the round trip: translate this chunk line by line instead.
+        } else if (oneByOne) {
             for (let k = 0; k < ids.length; k++) out[ids[k]] = await ppTranslate(texts[ids[k]], to);
         }
     }
-    res.json({ texts: out });
+    return out;
+}
+
+// A whole caption track at once: one Google call per line takes ~2.5 s from the NAS, but 40-50 lines
+// joined by newlines take about the same.
+app.post('/api/pp/translate-batch', requireAuth, async function(req, res) {
+    const to = req.body.to || 'en';
+    if (to !== 'en' && to !== 'zh-CN') return res.status(400).json({ error: 'to must be en or zh-CN' });
+    if (!Array.isArray(req.body.texts)) return res.status(400).json({ error: 'texts must be an array' });
+    const texts = req.body.texts.slice(0, 200).map(function(t) {
+        return typeof t === 'string' ? t.replace(/\s+/g, ' ').trim().slice(0, 500) : '';
+    });
+    res.json({ texts: await ppTranslateMany(texts, to, true) });
+});
+
+// Hover meanings for every word in a video at once, so the extension's bubble never waits.
+app.post('/api/pp/lookup-batch', requireAuth, async function(req, res) {
+    if (!Array.isArray(req.body.words)) return res.status(400).json({ error: 'words must be an array' });
+    const words = req.body.words.filter(function(w) {
+        return typeof w === 'string' && w.length <= 20 && HAN_RE.test(w);
+    }).slice(0, 500);
+    const meanings = words.map(ppMeaning);
+    // Words outside the dictionary data are machine-translated together (no one-by-one fallback: too slow for hundreds).
+    const missing = words.filter(function(w, i) { return !meanings[i]; });
+    const translated = await ppTranslateMany(missing, 'en', false);
+    const out = {};
+    words.forEach(function(w, i) {
+        out[w] = {
+            pinyin: pinyin(w, { toneType: 'symbol' }).replace(/\s+/g, ''),
+            meaning: meanings[i] || translated[missing.indexOf(w)] || ''
+        };
+    });
+    res.json({ words: out });
 });
 
 app.post('/api/pp/translate', requireAuth, async function(req, res) {
