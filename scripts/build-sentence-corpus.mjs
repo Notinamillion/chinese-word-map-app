@@ -122,6 +122,18 @@ for (const [w, re] of [['从', /^from/], ['东西', /^thing/], ['会', /^can/], 
 }
 
 fs.writeFileSync(outPath, JSON.stringify({ v: 1, words, s: sentences }));
+
+// Every CC-CEDICT word's everyday meaning, next to the corpus: hover look-ups for YouTube words never need
+// machine translation (Google rate-limits the NAS).
+const allMeanings = {};
+for (const word of entries.keys()) {
+  if (!HAN.test(word)) continue;
+  const meaning = meaningOf(word);
+  if (meaning) allMeanings[word] = meaning;
+}
+const meaningsPath = path.join(path.dirname(outPath), 'word-meanings.json');
+fs.writeFileSync(meaningsPath, JSON.stringify(allMeanings));
+console.log(`${Object.keys(allMeanings).length} dictionary meanings -> ${meaningsPath} (${(fs.statSync(meaningsPath).size / 1e6).toFixed(1)} MB)`);
 console.log(`${sentences.length} sentences, ${Object.keys(words).length} words -> ${outPath} (${(fs.statSync(outPath).size / 1e6).toFixed(1)} MB)`);
 const sample = sentences.find((s) => s[1].includes('是否'));
 console.log(JSON.stringify(sample));

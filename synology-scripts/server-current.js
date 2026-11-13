@@ -2212,13 +2212,42 @@ app.post('/api/pp/words', requireAuth, function(req, res) {
 });
 
 // Subtitle lines repeat a lot; cache to stay under Google's rate limit.
+// Google's plain translate endpoint: ~0.2-0.8 s per request from the NAS. The translate library took 1-3 s
+// and often failed to read Google's reply ("Cannot read property '1' of null").
+function ppGoogle(text, to) {
+    return new Promise(function(resolve, reject) {
+        const body = 'q=' + encodeURIComponent(text);
+        const req = require('https').request({
+            host: 'translate.googleapis.com',
+            path: '/translate_a/single?client=gtx&sl=auto&dt=t&tl=' + encodeURIComponent(to),
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'Content-Length': Buffer.byteLength(body) },
+            timeout: 10000
+        }, function(res) {
+            let data = '';
+            res.setEncoding('utf8');
+            res.on('data', function(chunk) { data += chunk; });
+            res.on('end', function() {
+                try {
+                    resolve((JSON.parse(data)[0] || []).map(function(s) { return s[0] || ''; }).join(''));
+                } catch (error) {
+                    reject(new Error('Google translate returned HTTP ' + res.statusCode));
+                }
+            });
+        });
+        req.on('timeout', function() { req.destroy(new Error('Google translate timed out')); });
+        req.on('error', reject);
+        req.end(body);
+    });
+}
+
 const ppTranslateCache = new Map();
 async function ppTranslate(text, to) {
     const key = to + ':' + text;
     if (ppTranslateCache.has(key)) return ppTranslateCache.get(key);
     let out = '';
     try {
-        out = (await translate(text, { to: to })).text || '';
+        out = await ppGoogle(text, to);
     } catch (error) {
         console.error('[PP] Translate error:', error.message);
     }
@@ -2251,7 +2280,7 @@ async function ppTranslateMany(texts, to, oneByOne) {
         const ids = chunks[c];
         let parts = [];
         try {
-            parts = ((await translate(ids.map(function(i) { return texts[i]; }).join('\n'), { to: to })).text || '').split('\n');
+            parts = (await ppGoogle(ids.map(function(i) { return texts[i]; }).join('\n'), to)).split('\n');
         } catch (error) {
             console.error('[PP] Batch translate error:', error.message);
         }
@@ -2282,16 +2311,10 @@ app.post('/api/pp/lookup-batch', requireAuth, async function(req, res) {
     const words = req.body.words.filter(function(w) {
         return typeof w === 'string' && w.length <= 20 && HAN_RE.test(w);
     }).slice(0, 500);
-    const meanings = words.map(ppMeaning);
-    // Words outside the dictionary data are machine-translated together (no one-by-one fallback: too slow for hundreds).
-    const missing = words.filter(function(w, i) { return !meanings[i]; });
-    const translated = await ppTranslateMany(missing, 'en', false);
+    // Dictionary only: no machine translation here, because hundreds of words per video got the NAS rate-limited by Google.
     const out = {};
-    words.forEach(function(w, i) {
-        out[w] = {
-            pinyin: pinyin(w, { toneType: 'symbol' }).replace(/\s+/g, ''),
-            meaning: meanings[i] || translated[missing.indexOf(w)] || ''
-        };
+    words.forEach(function(w) {
+        out[w] = { pinyin: pinyin(w, { toneType: 'symbol' }).replace(/\s+/g, ''), meaning: ppMeaning(w) };
     });
     res.json({ words: out });
 });
@@ -2342,10 +2365,18 @@ const PUMP_PER_WORD = 3;
 const DAY_MS = 86400000;
 const PUMP_STATUSES = ['known', 'learning', 'ignored', 'unknown'];
 let corpus = { words: {}, s: [] };
+let wordMeanings = {}; // word -> everyday meaning, all of CC-CEDICT (data/word-meanings.json)
 const wordIndex = new Map(); // word -> positions in corpus.s, shortest sentence first
 const corpusById = new Map();
 
 function loadCorpus() {
+    try {
+        // Built next to the corpus by build-sentence-corpus.mjs: every CC-CEDICT word's everyday meaning (~30 MB in memory).
+        wordMeanings = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'word-meanings.json'), 'utf8'));
+        console.log('[PUMP] Loaded', Object.keys(wordMeanings).length, 'dictionary meanings');
+    } catch (error) {
+        console.error('[PUMP] Failed to load word meanings:', error.message);
+    }
     try {
         corpus = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'sentence-corpus.json'), 'utf8'));
         corpus.s.forEach(function(s, i) {
@@ -2537,6 +2568,7 @@ app.post('/api/pump/answer', requireAuth, function(req, res) {
 function ppMeaning(word) {
     const c = corpus.words[word];
     if (c && c[1]) return c[1];
+    if (wordMeanings[word]) return wordMeanings[word];
     const data = characterDataMap || {};
     if (data[word] && data[word].meanings) return data[word].meanings.slice(0, 3).join('; ');
     const chars = parseCharacters(word);
@@ -2545,7 +2577,17 @@ function ppMeaning(word) {
         const hit = Array.isArray(compounds) && compounds.find(function(x) { return x.word === word; });
         if (hit && hit.meanings) return hit.meanings.slice(0, 3).join('; ');
     }
-    return '';
+    // Not a dictionary word (often a segmenter artefact like 很好 or 我想): describe its longest dictionary pieces.
+    const pieces = [];
+    for (let i = 0; i < chars.length;) {
+        let j = chars.length;
+        while (j > i + 1 && !wordMeanings[chars.slice(i, j).join('')]) j--;
+        const piece = chars.slice(i, j).join('');
+        const sense = (wordMeanings[piece] || '').split(';')[0].trim();
+        if (sense) pieces.push(piece + ' ' + sense);
+        i = j;
+    }
+    return pieces.length > 1 ? pieces.join(' · ') : (pieces[0] || '').replace(/^\S+ /, '');
 }
 
 app.get('/api/pp/lookup', requireAuth, async function(req, res) {
