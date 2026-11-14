@@ -65,6 +65,29 @@ test('progress round trip; known words from YouTube merge in', async () => {
   assert.equal(got.characterProgress['好'].known, true);
 });
 
+test('un-marking syncs both ways between YouTube and the app', async () => {
+  let got = (await call('/api/progress')).data;
+  got.characterProgress['他'] = { known: true };
+  got.compoundProgress['中'].known.push('中心');
+  await call('/api/progress', got);
+  // Un-marked on YouTube: un-ticked in the app.
+  await call('/api/pp/words', { word: '中心', status: 'ignored' });
+  await call('/api/pp/words', { word: '他', status: 'learning' });
+  got = (await call('/api/progress')).data;
+  assert.ok(!got.compoundProgress['中'].known.includes('中心'));
+  assert.equal(got.characterProgress['他'].known, false);
+  await call('/api/progress', got); // the app saves what it got
+  // Ticked again in the app: known on YouTube too.
+  got.characterProgress['他'].known = true;
+  await call('/api/progress', got);
+  assert.equal((await call('/api/pp/words')).data.words['他'].status, 'known');
+  // Un-ticked in the app: no longer known on YouTube, and stays un-ticked.
+  got.characterProgress['他'].known = false;
+  await call('/api/progress', got);
+  assert.equal((await call('/api/pp/words')).data.words['他'], undefined);
+  assert.equal((await call('/api/progress')).data.characterProgress['他'].known, false);
+});
+
 test('extension word statuses', async () => {
   await call('/api/pp/words', { word: '螺丝', status: 'learning' });
   await call('/api/pp/words', { word: '汤姆', status: 'ignored' });

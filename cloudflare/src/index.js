@@ -215,9 +215,18 @@ route('GET', '/api/progress', async ({ request, env }) => {
   const progress = row ? JSON.parse(row.data) : { compoundProgress: {} };
   progress.characterProgress = progress.characterProgress || {};
   progress.compoundProgress = progress.compoundProgress || {};
-  // Words marked known on YouTube / in Daily Sentences show in ZhongMap; the app saves them on its next sync.
-  const { results } = await env.DB.prepare("SELECT word, chars FROM pp_words WHERE user_id = ? AND status = 'known'").bind(user.id).all();
-  for (const { word, chars } of results) {
+  // Marks from YouTube / Daily Sentences win over the app's ticks: known shows as known, any other mark un-ticks it.
+  // The app saves the result on its next sync; ticks made in the app flow back through POST /api/progress.
+  const { results } = await env.DB.prepare('SELECT word, status, chars FROM pp_words WHERE user_id = ?').bind(user.id).all();
+  for (const { word, status, chars } of results) {
+    if (status !== 'known') {
+      if ([...word].length === 1) { if (progress.characterProgress[word]?.known) progress.characterProgress[word].known = false; }
+      else for (const c of new Set(word)) {
+        const list = progress.compoundProgress[c]?.known;
+        if (list?.includes(word)) progress.compoundProgress[c].known = list.filter((w) => w !== word);
+      }
+      continue;
+    }
     if ([...word].length === 1) {
       progress.characterProgress[word] = { ...progress.characterProgress[word], known: true };
       continue;
@@ -236,9 +245,22 @@ route('POST', '/api/progress', async ({ request, env, body }) => {
   if (!body || typeof body !== 'object' || Array.isArray(body)) fail(400, 'Invalid progress data');
   const data = JSON.stringify(body);
   if (data.length > 1900000) fail(413, 'Progress data too large'); // D1 row limit is 2 MB
-  await env.DB.prepare(`INSERT INTO progress (user_id, data, known_json, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, known_json = excluded.known_json, updated_at = CURRENT_TIMESTAMP`)
-    .bind(user.id, data, JSON.stringify(knownFromProgress(body))).run();
+  const known = knownFromProgress(body);
+  const old = await env.DB.prepare('SELECT known_json FROM progress WHERE user_id = ?').bind(user.id).first();
+  const before = new Set(JSON.parse(old?.known_json || '[]'));
+  const now = new Set(known);
+  // Ticked / un-ticked in the app since the last sync: update the YouTube / Daily Sentences mark to match.
+  const ticked = known.filter((w) => !before.has(w));
+  const unticked = [...before].filter((w) => !now.has(w));
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO progress (user_id, data, known_json, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, known_json = excluded.known_json, updated_at = CURRENT_TIMESTAMP`)
+      .bind(user.id, data, JSON.stringify(known)),
+    env.DB.prepare(`UPDATE pp_words SET status = 'known', known = 1, updated_at = ? WHERE user_id = ? AND status != 'known'
+      AND word IN (SELECT value FROM json_each(?))`).bind(Date.now(), user.id, JSON.stringify(ticked)),
+    env.DB.prepare(`UPDATE pp_words SET status = 'unknown', known = 0, updated_at = ? WHERE user_id = ? AND status = 'known'
+      AND word IN (SELECT value FROM json_each(?))`).bind(Date.now(), user.id, JSON.stringify(unticked)),
+  ]);
   return json({ success: true, message: 'Progress saved to database' });
 });
 
