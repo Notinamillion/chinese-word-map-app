@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zhongmap",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // public/: the web app (/app, from `npx expo export --platform web`) and the split data files (/data,
+  // from scripts/build-cloudflare-data.mjs). Static files are free and don't run the Worker.
+  "assets": { "directory": "public", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "zhongmap", "database_id": "f33ff05f-31c8-4684-b931-5262d46348a6" }
+  ],
+  "observability": { "enabled": true }
+}
