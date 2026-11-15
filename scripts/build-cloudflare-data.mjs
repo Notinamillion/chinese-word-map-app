@@ -1,14 +1,15 @@
 // Splits ZhongMap's big read-only data into small static files for the Cloudflare Worker (free plan:
 // 10 ms CPU per request, so the Worker reads one small file instead of parsing 20 MB).
-// Usage: node scripts/build-cloudflare-data.mjs <sentence-corpus.json> <word-meanings.json> <characters.json>
+// Usage: node scripts/build-cloudflare-data.mjs <sentence-corpus.json> <word-meanings.json> <characters.json> [cedict_ts.u8]
 // Output: cloudflare/public/data/{dict,pump,chars,compounds}/<bucket>.json and pump/words.json
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { pinyin } from 'pinyin-pro';
+import { fillPumpGlosses } from './pump-glosses.mjs';
 import { bucketOf, DICT_BUCKETS, PUMP_BUCKETS, CHAR_BUCKETS, COMPOUND_BUCKETS } from '../cloudflare/src/buckets.js';
 
-const [corpusPath, meaningsPath, charactersPath] = process.argv.slice(2);
+const [corpusPath, meaningsPath, charactersPath, cedictPath] = process.argv.slice(2); // CC-CEDICT: better card glosses
 if (!charactersPath) throw new Error('usage: build-cloudflare-data.mjs <sentence-corpus.json> <word-meanings.json> <characters.json>');
 const corpus = JSON.parse(fs.readFileSync(corpusPath, 'utf8'));
 const meanings = JSON.parse(fs.readFileSync(meaningsPath, 'utf8'));
@@ -51,6 +52,9 @@ const card = (s) => [s[0], s[1], s[2], s[3].map((t) => (Array.isArray(t) ? [t[0]
 const lengthScore = (s) => (s[1].length < 10 ? 100 : Math.abs(s[1].length - 22));
 const pump = new Map(words.map((w) => [w, [...byWord.get(w)].sort((a, b) => lengthScore(a) - lengthScore(b)).slice(0, 10).map(card)]));
 writeBuckets('pump', PUMP_BUCKETS, pump);
+
+// Every card word gets a gloss: fills names, numbers and 很好-style pieces, and tidies the CC-CEDICT wording.
+console.log(fillPumpGlosses(out, cedictPath));
 
 // 3. Example sentences per ZhongMap character (CharacterDetail / SentencePractice screens).
 const chars = new Map();

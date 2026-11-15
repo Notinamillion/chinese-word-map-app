@@ -1,5 +1,5 @@
 // Daily sentence mode, modelled on Language Reactor's PhrasePump:
-// one target word per sentence, pinyin over every word, tap any word to mark it known / learning / ignore.
+// one target word per sentence, pinyin over every word, tap any word for its meaning and to mark it known / learning / ignore.
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import * as Speech from 'expo-speech';
@@ -8,8 +8,8 @@ import COLORS from '../theme/colors';
 
 // Language Reactor colours: purple = not marked yet, green = known, orange = learning; grey = ignored.
 const STATUS_LABELS = { new: 'Not marked', known: 'Known', learning: 'Learning', ignored: 'Ignored' };
-// Tapping cycles: not marked → Known → Learning → Ignored → Known.
-const NEXT_STATUS = { new: 'known', known: 'learning', learning: 'ignored', ignored: 'known' };
+// Buttons in the word panel, like Language Reactor's: ✓ known, 📖 learning, ⊘ ignore.
+const STATUS_BUTTONS = [['known', '✓ Known'], ['learning', '📖 Learning'], ['ignored', '⊘ Ignore']];
 const colourOf = (s) => (STATUS_LABELS[s] ? s : 'new');
 const PURPLE = '#8E44AD'; // not in the brand palette; matches Language Reactor's "not marked" colour
 
@@ -47,10 +47,9 @@ export default function SentencePump({ onExit }) {
 
   const card = cards[index];
   const statusOf = (w, s) => marks[w] || s;
-  const cycle = (t) => {
-    setMarks((m) => ({ ...m, [t.w]: NEXT_STATUS[colourOf(m[t.w] || t.s)] }));
-    setSelected(t.w);
-  };
+  // Tapping a word opens its meaning; tapping it again closes it. Status changes only from the panel's buttons.
+  const select = (t) => setSelected((cur) => (cur === t.w ? null : t.w));
+  const setStatus = (w, s) => setMarks((m) => ({ ...m, [w]: s }));
 
   const next = async () => {
     if (!card || saving) return;
@@ -123,7 +122,7 @@ export default function SentencePump({ onExit }) {
               const s = colourOf(statusOf(t.w, t.s));
               const isTarget = t.w === card.target;
               return (
-                <Pressable key={i} onPress={() => cycle(t)} accessibilityLabel={`${t.w}: ${STATUS_LABELS[s]}`}
+                <Pressable key={i} onPress={() => select(t)} accessibilityLabel={`${t.w}: ${STATUS_LABELS[s]}`}
                   onHoverIn={() => hoverWord(t.w)} onHoverOut={unhoverSoon}
                   style={[styles.word, isTarget && [styles.targetWord, styles[`box_${s}`]], hovered === t.w && styles.wordHovered]}>
                   {hovered === t.w && !!t.m && (
@@ -153,7 +152,7 @@ export default function SentencePump({ onExit }) {
           <View style={styles.targetRow}>
             {revealed && <Text style={styles.targetMeaning} numberOfLines={2}>{targetToken?.m}</Text>}
             {targetToken && (
-              <Pressable onPress={() => cycle(targetToken)}
+              <Pressable onPress={() => select(targetToken)}
                 style={[styles.targetChip, styles[`box_${colourOf(statusOf(targetToken.w, targetToken.s))}`]]}>
                 <Text style={[styles.targetChipPinyin, styles[`p_${colourOf(statusOf(targetToken.w, targetToken.s))}`]]}>{targetToken.p}</Text>
                 <Text style={[styles.targetChipText, styles[`h_${colourOf(statusOf(targetToken.w, targetToken.s))}`]]}>{card.target}</Text>
@@ -164,17 +163,28 @@ export default function SentencePump({ onExit }) {
 
         {look && (
           <View style={styles.lookup}>
-            <Text style={styles.lookupWord}>{look.w} <Text style={styles.lookupPinyin}>{look.p}</Text>
-              <Text style={[styles.lookupStatus, styles[`h_${colourOf(statusOf(look.w, look.s))}`]]}>  {STATUS_LABELS[colourOf(statusOf(look.w, look.s))]}</Text>
-            </Text>
-            {!!look.m && <Text style={styles.lookupMeaning}>{look.m}</Text>}
+            <Text style={styles.lookupWord}>{look.w} <Text style={styles.lookupPinyin}>{look.p}</Text></Text>
+            {!!look.m && look.m.split(/;\s*/).map((line, k) => (
+              <Text key={k} style={k ? styles.lookupMeaning : styles.lookupMain}>{line}</Text>
+            ))}
+            <View style={styles.statusRow}>
+              {STATUS_BUTTONS.map(([s, label]) => {
+                const on = colourOf(statusOf(look.w, look.s)) === s;
+                return (
+                  <Pressable key={s} onPress={() => setStatus(look.w, s)} accessibilityRole="button" accessibilityState={{ selected: on }}
+                    style={[styles.statusBtn, on && styles[`box_${s}`]]}>
+                    <Text style={[styles.statusBtnText, on && styles[`h_${s}`]]}>{label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
         )}
 
         <Pressable disabled={saving} style={styles.nextBtn} onPress={next}>
           <Text style={styles.nextText}>Next ▶</Text>
         </Pressable>
-        <Text style={styles.hint}>Tap a word to change it: purple = not marked, green = known, orange = learning, grey = ignored.</Text>
+        <Text style={styles.hint}>Tap a word for its meaning, then mark it. Purple = not marked, green = known, orange = learning, grey = ignored.</Text>
       </ScrollView>
     </View>
   );
@@ -211,7 +221,9 @@ const styles = StyleSheet.create({
   box_known: { borderColor: COLORS.primaryGreen, backgroundColor: COLORS.greenLight },
   box_learning: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight },
   box_ignored: { borderColor: COLORS.darkGray, backgroundColor: COLORS.lightGray },
-  lookupStatus: { fontSize: 14, fontWeight: '700' },
+  statusRow: { flexDirection: 'row', marginTop: 12, gap: 8 },
+  statusBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: COLORS.mediumGray },
+  statusBtnText: { fontSize: 15, fontWeight: '600', color: COLORS.textMedium },
   pinyin: { fontSize: 12, color: COLORS.textLight },
   hanzi: { fontSize: 28, color: COLORS.textDark },
   punct: { fontSize: 28, color: COLORS.textLight, paddingBottom: 2 },
@@ -229,7 +241,8 @@ const styles = StyleSheet.create({
   lookup: { backgroundColor: COLORS.white, borderRadius: 12, padding: 14, marginTop: 12 },
   lookupWord: { fontSize: 22, color: COLORS.textDark },
   lookupPinyin: { fontSize: 15, color: COLORS.textMedium },
-  lookupMeaning: { fontSize: 14, color: COLORS.textMedium, marginTop: 4 },
+  lookupMain: { fontSize: 16, color: COLORS.textDark, marginTop: 6 },
+  lookupMeaning: { fontSize: 14, color: COLORS.textMedium, marginTop: 2 },
   nextBtn: { marginTop: 16, backgroundColor: COLORS.primaryGreen, paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
   nextText: { fontSize: 17, fontWeight: '700', color: COLORS.white },
   hint: { textAlign: 'center', color: COLORS.textLight, fontSize: 12, marginTop: 12 },
