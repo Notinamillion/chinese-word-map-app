@@ -74,6 +74,29 @@ const firstEn = new Map();
 for (const [cmn, en] of tsv('cmn-eng_links.tsv')) if (!firstEn.has(cmn) && eng.has(en)) firstEn.set(cmn, eng.get(en));
 
 const seg = new Intl.Segmenter('zh', { granularity: 'word' }); // same segmenter as the PhrasePump extension
+
+// The segmenter leaves words it doesn't know as single characters (客|服, 俱|乐|部, 一|会|儿): join runs of
+// single characters back into the longest dictionary word, but not grammar endings (车|坏|了 stays apart).
+// shortcut: hand-picked dictionary words that are usually two words in these sentences (我等你, 把门关上); add more if they show up.
+const NOT_JOINED = new Set(['我等', '你等', '他等', '把门', '在下', '这不', '要说', '想来', '要看', '出外', '一会']);
+const single = (p) => p.isWordLike && HAN.test(p.segment) && Array.from(p.segment).length === 1;
+function joinWords(parts) {
+  const out = [];
+  for (let i = 0; i < parts.length; ) {
+    let n = 1;
+    for (let k = Math.min(4, parts.length - i); k > 1; k--) {
+      const run = parts.slice(i, i + k);
+      const word = run.map((p) => p.segment).join('');
+      if (run.every(single) && entries.has(word) && !/[的了着过]$/.test(word) && !NOT_JOINED.has(word)) { n = k; break; }
+    }
+    out.push(n === 1 ? parts[i] : { segment: parts.slice(i, i + n).map((p) => p.segment).join(''), isWordLike: true });
+    i += n;
+  }
+  return out;
+}
+const joined = (s) => joinWords([...seg.segment(s)]).map((p) => p.segment).join('|');
+assert.equal(joined('他等火车的时候，一会儿听音乐'), '他|等|火车|的|时候|，|一会儿|听|音乐');
+assert.ok(joined('我的车坏了').endsWith('坏|了'));
 const seen = new Set();
 const sentences = [];
 const counts = new Map();
@@ -91,7 +114,7 @@ for (const [id, , raw] of tsv('cmn_sentences.tsv')) {
   const aligned = py.length === chars.length;
   let pos = 0;
   const tokens = [];
-  for (const part of seg.segment(zh)) {
+  for (const part of joinWords([...seg.segment(zh)])) {
     const n = Array.from(part.segment).length;
     if (part.isWordLike && HAN.test(part.segment)) {
       const p = aligned ? py.slice(pos, pos + n).join('') : pinyin(part.segment, { toneType: 'symbol' }).replace(/\s+/g, '');
