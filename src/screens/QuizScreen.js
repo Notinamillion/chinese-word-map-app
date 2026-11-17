@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
 import api from '../services/api';
+import SentencePump from './SentencePump';
 import syncManager from '../services/syncManager';
 import COLORS from '../theme/colors';
 import {
@@ -1293,6 +1294,10 @@ const QuizScreen = React.memo(() => {
     );
   };
 
+  if (quizMode === 'pump') {
+    return <SentencePump onExit={() => setQuizMode(null)} />;
+  }
+
   // Quiz mode selection
   if (!quizMode) {
     return (
@@ -1323,11 +1328,11 @@ const QuizScreen = React.memo(() => {
 
           <TouchableOpacity
             style={styles.modeButton}
-            onPress={() => startSentenceQuiz()}
+            onPress={() => setQuizMode('pump')}
           >
             <Text style={styles.modeIcon}>💬</Text>
-            <Text style={styles.modeTitle}>Sentence Quiz</Text>
-            <Text style={styles.modeDesc}>Practice with example sentences</Text>
+            <Text style={styles.modeTitle}>Daily Sentences</Text>
+            <Text style={styles.modeDesc}>60 sentences a day, 10 new words — tap words to mark them</Text>
           </TouchableOpacity>
         </View>
 

@@ -1,9 +1,11 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // API Configuration
 // Using HTTPS with Synology DDNS and SSL
-const API_BASE_URL = 'https://chinese-app.synology.me';
+// The web build is served by the API server itself, so it calls whatever host it was loaded from.
+const API_BASE_URL = Platform.OS === 'web' ? '' : 'https://zhongmap.com';
 
 // Create axios instance
 const apiClient = axios.create({
@@ -214,6 +216,17 @@ class APIService {
       console.error('[API] Upload image error:', error);
       throw error;
     }
+  }
+
+  // Daily sentence mode
+  async getPumpNext(limit = 10) {
+    const response = await apiClient.get(`/api/pump/next?limit=${limit}`);
+    return response.data;
+  }
+
+  async answerPump(answer) {
+    const response = await apiClient.post('/api/pump/answer', answer);
+    return response.data;
   }
 
   // Sentences

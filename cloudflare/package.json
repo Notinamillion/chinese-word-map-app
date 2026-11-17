@@ -1,0 +1,22 @@
+{
+  "name": "cloudflare",
+  "version": "1.0.0",
+  "description": "ZhongMap on Cloudflare Workers + D1",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "test": "node --test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "pinyin-pro": "^3.27.0"
+  },
+  "private": true,
+  "devDependencies": {
+    "sql.js": "^1.16.0",
+    "wrangler": "^4.162.0"
+  }
+}
