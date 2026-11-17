@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 
-const BASE = process.argv[2] || 'https://zhongmap.seanmichaelbateman.workers.dev';
+const BASE = process.argv[2] || 'https://zhongmap.com';
 const ACCOUNT = '1b9fb5c24b6a5ef05a42e51ed84235bc';
 const DATABASE = 'f33ff05f-31c8-4684-b931-5262d46348a6';
 let cookie = '';

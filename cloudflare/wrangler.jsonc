@@ -10,5 +10,10 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "zhongmap", "database_id": "f33ff05f-31c8-4684-b931-5262d46348a6" }
   ],
+  "routes": [
+    { "pattern": "zhongmap.com", "custom_domain": true },
+    { "pattern": "www.zhongmap.com", "custom_domain": true }
+  ],
+  "workers_dev": true, // keep the old address working for anyone not yet switched
   "observability": { "enabled": true }
 }

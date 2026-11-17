@@ -1,6 +1,6 @@
 # ZhongMap on Cloudflare
 
-Live at https://zhongmap.seanmichaelbateman.workers.dev (Workers free plan + D1 database `zhongmap`).
+Live at https://zhongmap.com (custom domain, DNS on Cloudflare; the old https://zhongmap.seanmichaelbateman.workers.dev still works). Workers free plan + D1 database `zhongmap`.
 Replaces the Synology NAS server (`synology-scripts/server-current.js`).
 
 - `src/index.js` – the API (`/api/*`). Free plan = 10 ms CPU per request, so big read-only data is not loaded by the Worker.
