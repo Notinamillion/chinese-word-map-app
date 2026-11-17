@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 // API Configuration
 // Using HTTPS with Synology DDNS and SSL
 // The web build is served by the API server itself, so it calls whatever host it was loaded from.
-const API_BASE_URL = Platform.OS === 'web' ? '' : 'https://chinese-app.synology.me';
+const API_BASE_URL = Platform.OS === 'web' ? '' : 'https://zhongmap.com';
 
 // Create axios instance
 const apiClient = axios.create({
